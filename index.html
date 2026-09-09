@@ -8,6 +8,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Табель">
 <meta name="theme-color" content="#1B1D1F">
+<script>
+// Применяем тему максимально рано (до отрисовки), чтобы не было "вспышки" не той темы
+(function(){
+  try{
+    var pref = localStorage.getItem('wc-theme') || 'auto';
+    var light = pref==='light' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    if(light){
+      document.documentElement.classList.add('light-theme');
+      document.addEventListener('DOMContentLoaded', function(){
+        var m = document.querySelector('meta[name="theme-color"]');
+        if(m) m.setAttribute('content', '#F4F2EE');
+      });
+    }
+  }catch(e){}
+})();
+</script>
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
 <title>Табель</title>
@@ -26,7 +42,21 @@
     --off: #6C6F72;
     --danger: #FF4D6D;
     --neon-white: #FFFFFF;
+    --off-accent: #FFFFFF;
+    --off-accent-bg: rgba(255,255,255,0.15);
+    --dayoff-tint: rgba(255,255,255,0.05);
     --radius: 10px;
+  }
+  :root.light-theme{
+    --bg: #F4F2EE;
+    --panel: #FFFFFF;
+    --panel-alt: #ECE9E2;
+    --border: #DBD6CD;
+    --text: #23262A;
+    --muted: #6D7075;
+    --off-accent: #23262A;
+    --off-accent-bg: rgba(35,38,42,0.10);
+    --dayoff-tint: rgba(0,0,0,0.05);
   }
 
   *{ box-sizing: border-box; }
@@ -43,6 +73,10 @@
     max-width: 480px;
     margin: 0 auto;
     padding: 20px 14px 60px;
+    padding-top: calc(20px + env(safe-area-inset-top));
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+    padding-left: calc(14px + env(safe-area-inset-left));
+    padding-right: calc(14px + env(safe-area-inset-right));
   }
 
   /* ---- Header ---- */
@@ -61,7 +95,7 @@
   }
   .month-title{
     font-size: 30px;
-    font-weight: 600;
+    font-weight: 800;
     line-height: 1.1;
     margin-top: 2px;
   }
@@ -143,7 +177,7 @@
   .day.today{ border-color: var(--amber); }
   .day.selected{ box-shadow: 0 0 0 2px var(--text) inset; }
   .day.in-range{ box-shadow: 0 0 0 2px var(--amber) inset; background: rgba(255,149,0,0.10); }
-  .day.in-range .num{ color:#FFFFFF; font-weight:700; }
+  .day.in-range .num{ color:var(--text); font-weight:800; }
   .day .num{
     font-size: 13px;
     font-weight: 600;
@@ -158,7 +192,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .day.dayoff{ background: rgba(255,255,255,0.05); }
+  .day.dayoff{ background: var(--dayoff-tint); }
   .day .bar{
     position:absolute;
     bottom:0; left:0; right:0;
@@ -431,6 +465,29 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
+  // ---- Тема (авто/светлая/тёмная) ----
+  let themePref = 'auto';
+  try{ themePref = localStorage.getItem('wc-theme') || 'auto'; }catch(e){}
+
+  function isLightActive(){
+    if(themePref === 'light') return true;
+    if(themePref === 'dark') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  }
+  function applyTheme(){
+    const light = isLightActive();
+    document.documentElement.classList.toggle('light-theme', light);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute('content', light ? '#F4F2EE' : '#1B1D1F');
+  }
+  applyTheme();
+  if(window.matchMedia){
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const onSystemChange = function(){ if(themePref==='auto'){ applyTheme(); render(); } };
+    if(mq.addEventListener) mq.addEventListener('change', onSystemChange);
+    else if(mq.addListener) mq.addListener(onSystemChange);
+  }
+
   const SWATCH_COLORS = ['#FF9500','#00E5FF','#FF2FE0','#39FF14','#FFEE00','#FF3B3B','#7B2FFF','#00FFA3','#FF6EC7','#3D5CFF'];
   const WEEKDAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
   const MONTHS = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
@@ -481,6 +538,15 @@
   let exportForm = yearBounds(statsYear);
 
   function getWorkplace(id){ return state.workplaces.find(w=>w.id===id); }
+
+  // Сезонный неоновый цвет для названия месяца: зима — сине-голубой, весна — розовый,
+  // лето — зелёный, осень — оранжевый (m: 0=январь ... 11=декабрь)
+  function seasonColor(m){
+    if(m===11 || m===0 || m===1) return '#00E5FF'; // зима
+    if(m>=2 && m<=4) return '#FF2FE0'; // весна
+    if(m>=5 && m<=7) return '#39FF14'; // лето
+    return '#FF9500'; // осень
+  }
 
   function calcPay(shift){
     if(!shift || !shift.workplaceId) return 0;
@@ -813,7 +879,7 @@
 
     // header
     html += '<div class="top">';
-    html += '  <div><div class="brand">Табель</div><div class="month-title">'+MONTHS[m]+' '+y+'</div></div>';
+    html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:'+seasonColor(m)+';text-shadow:0 0 14px '+seasonColor(m)+'77;">'+MONTHS[m]+' '+y+'</div></div>';
     html += '  <div style="display:flex;gap:6px;flex-shrink:0;">';
     html += '    <div class="gear-btn" onclick="WC.toggleAnalytics()" title="Статистика и экспорт">'+analyticsIcon()+'</div>';
     html += '    <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
@@ -857,8 +923,8 @@
       if(s && s.dayOff){
         cls += ' dayoff';
         amt = 'вых';
-        amtStyle = 'color:#FFFFFF;text-shadow:0 0 5px rgba(255,255,255,0.9)';
-        bar = '<div class="bar" style="background:#FFFFFF;box-shadow:0 0 6px #FFFFFF"></div>';
+        amtStyle = 'color:var(--off-accent);text-shadow:0 0 5px var(--off-accent)';
+        bar = '<div class="bar" style="background:var(--off-accent);box-shadow:0 0 6px var(--off-accent)"></div>';
       } else if(s && s.workplaceId){
         const wp = getWorkplace(s.workplaceId);
         if(wp){
@@ -951,14 +1017,14 @@
         const active = s.workplaceId === w.id;
         html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.pickWorkplace(\''+w.id+'\')">'+esc(w.name)+'</div>';
       });
-      html += '    <div class="choice'+(s.dayOff?' active':'')+'" style="color:#FFFFFF'+(s.dayOff?';background:rgba(255,255,255,0.15);box-shadow:0 0 10px #FFFFFF':'')+'" onclick="WC.pickDayOff()">Выходной</div>';
+      html += '    <div class="choice'+(s.dayOff?' active':'')+'" style="color:var(--off-accent)'+(s.dayOff?';background:var(--off-accent-bg);box-shadow:0 0 10px var(--off-accent)':'')+'" onclick="WC.pickDayOff()">Выходной</div>';
       html += '  </div>';
     } else {
-      let label = '', color = '#FFFFFF';
-      if(s.dayOff){ label = 'Выходной'; color = '#FFFFFF'; }
-      else{ const wp = getWorkplace(s.workplaceId); label = wp ? wp.name : '—'; color = wp ? wp.color : '#FFFFFF'; }
+      let label = '', color = 'var(--off-accent)', bg = 'var(--off-accent-bg)';
+      if(s.dayOff){ label = 'Выходной'; color = 'var(--off-accent)'; bg = 'var(--off-accent-bg)'; }
+      else{ const wp = getWorkplace(s.workplaceId); label = wp ? wp.name : '—'; color = wp ? wp.color : 'var(--off-accent)'; bg = wp ? (wp.color+'22') : 'var(--off-accent-bg)'; }
       html += '  <div class="choice-row">';
-      html += '    <div class="choice active" style="color:'+color+';background:'+color+'22;box-shadow:0 0 10px '+color+';flex:none;">'+esc(label)+'</div>';
+      html += '    <div class="choice active" style="color:'+color+';background:'+bg+';box-shadow:0 0 10px '+color+';flex:none;">'+esc(label)+'</div>';
       html += '    <div class="choice" style="color:var(--muted);flex:none;" onclick="WC.reopenPicker()">Изменить</div>';
       html += '  </div>';
     }
@@ -1103,6 +1169,15 @@
 
   function renderSettings(){
     let html = '<div class="settings'+(settingsOpen?' open':'')+'">';
+
+    html += '  <div class="section-title">Тема</div>';
+    html += '  <div class="choice-row" style="margin-bottom:18px;">';
+    [['auto','Авто (как в системе)'],['light','Светлая'],['dark','Тёмная']].forEach(p=>{
+      const active = themePref===p[0];
+      html += '<div class="choice'+(active?' active':'')+'" style="color:var(--amber)'+(active?';background:#FF950022;box-shadow:0 0 10px var(--amber)':'')+'" onclick="WC.setThemePref(\''+p[0]+'\')">'+p[1]+'</div>';
+    });
+    html += '  </div>';
+
     html += '  <div class="section-title">Места работы</div>';
     state.workplaces.forEach((w,idx)=>{
       html += '  <div class="wp-edit">';
@@ -1174,6 +1249,12 @@
       if(settingsOpen){ patternOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null; }
       render();
     },
+    setThemePref(pref){
+      themePref = pref;
+      try{ localStorage.setItem('wc-theme', pref); }catch(e){}
+      applyTheme();
+      render();
+    },
     toggleAnalytics(){
       if(!analyticsOpen){
         exportForm = yearBounds(statsYear);
@@ -1232,6 +1313,7 @@
     },
     togglePattern(){
       if(!patternOpen){
+        patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
         settingsOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null;
       }
       patternOpen = !patternOpen;
@@ -1425,6 +1507,17 @@
       });
     }
   };
+
+  // Закрытие открытых панелей (настройки/шаблон/аналитика) по тапу вне их области —
+  // capture-фаза, чтобы сработать раньше собственных обработчиков кликнутого элемента.
+  document.addEventListener('click', function(e){
+    if(!(settingsOpen || patternOpen || analyticsOpen)) return;
+    if(e.target.closest('.settings')) return;
+    if(e.target.closest('.gear-btn')) return;
+    if(e.target.closest('.confirm-overlay')) return;
+    settingsOpen = false; patternOpen = false; analyticsOpen = false;
+    render();
+  }, true);
 
   loadState();
 })();
