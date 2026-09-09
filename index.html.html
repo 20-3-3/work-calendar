@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Табель">
+<meta name="theme-color" content="#1B1D1F">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAADfUlEQVR4nO3b4U0bQRSFUTuiC0CkjJSRciiBclJGygAJ6iA/LBFEuIjgnZkLPqcAtPv4/GZt8P788moHr/m2+gLoJQ4icRCJg0gcROIgEgeROIjEQSQOInEQiYNIHETiIBIHkTiIxEEkDiJxEImDSBxE4iASB5E4iMRBJA4icRCJg0gcROIgEgeROIjEQSQOInEQiYOoIo7767vVl1CnYSZnqy/gpYfft6svYaXzH99XX8JfFZvjyYmXsSubQMvmuL++2/98XH0VFR5+3z7+2q++it2uZ3Mo47mSaVTEUTKLKg0zqYiDTuIgEgfRxnFc3Fxt+wP5L9vOv2JzlLxzq9Iwk4o4dh2z6FEyjZY4djUTWa5nDtvHccyx1zOXVY6ZwOYPfC0fnz/RR48hx4r3LPONmHnRMwdtRsVhecw0aNo2B9HAOCyPOcbNeezm0MdoQyc8/FjRxzijZ+uZg2hGHJbHCBOmOmlz6GNbc+a5P7+c+mtr+K7OpzbzZTb7mcMKOcbk6S14INXHx8yf2+xj5TlHzDutejmtjONAIm9Yu2XXx3EgkRcaDt+WOJ472VAagniuMQ5K+PicSBxE4iASB5E4iMRBJA4icRCJg0gcROIgEgeROIjEQSQOInEQiYNIHETiIBIHkTiIxEEkDiJxEP0BNGenoBxf/EoAAAAASUVORK5CYII=">
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAADfUlEQVR4nO3b4U0bQRSFUTuiC0CkjJSRciiBclJGygAJ6iA/LBFEuIjgnZkLPqcAtPv4/GZt8P788moHr/m2+gLoJQ4icRCJg0gcROIgEgeROIjEQSQOInEQiYNIHETiIBIHkTiIxEEkDiJxEImDSBxE4iASB5E4iMRBdLb6Al5xf323+hLWuLjp+vbhvuTrkCcbRNIQyvo4ZPGGtYmsjEMW77QqkTVxyOID5iey4N2KMj5m/txmx6GMY0ye3rxjRRYbmnPETNocytjWnHnOiEMZI0yYqo/PiYbHYW2MM3q2Y+NQxmhDJzwwDmXMMW7OnjmIRsVhbcw0aNo2B9GQOKyN+UbMvPE/wd7Q8C8wR/pEr5zt/7Yy4ua/QBP/6h9U++b4klkcHG6teZFUP5B+4TKeNN9jbxzNU9tW7Z1uHMdWS7J2XoNsdb/bHlKNm+PUyjgovOu6OApnNE3bvXfF0Tad+aomUBRH1VwW6plDURy0aYmj5+XSoGQaLXFQSBxEFXGUbNEqDTOpiINO4iASB5E4iMRBJA4icRCJg0gcROIgEgeROIjEQSQOInEQiYNIHETiIBIHkTiIxEEkDiJxEImDSBxE4iASB5E4iMRBJA4icRCJg0gcROIgEgeROIjEQSQOInEQiYOoIo7767vVl1CnYSZnqy/gpYfft6svYaXzH99XX8JfFZvjyYmXsSubQMvmuL++2/98XH0VFR5+3z7+2q++it2uZ3Mo47mSaVTEUTKLKg0zqYiDTuIgEgfRxnFc3Fxt+wP5L9vOv2JzlLxzq9Iwk4o4dh2z6FEyjZY4djUTWa5nDtvHccyx1zOXVY6ZwOYPfC0fnz/RR48hx4r3LPONmHnRMwdtRsVhecw0aNo2B9HAOCyPOcbNeezm0MdoQyc8/FjRxzijZ+uZg2hGHJbHCBOmOmlz6GNbc+a5P7+c+mtr+K7OpzbzZTb7mcMKOcbk6S14INXHx8yf2+xj5TlHzDutejmtjONAIm9Yu2XXx3EgkRcaDt+WOJ472VAagniuMQ5K+PicSBxE4iASB5E4iMRBJA4icRCJg0gcROIgEgeROIjEQSQOInEQiYNIHETiIBIHkTiIxEEkDiJxEP0BNGenoBxf/EoAAAAASUVORK5CYII=">
+<link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjoi0KLQsNCx0LXQu9GMIOKAlCDRg9GH0LXRgiDRgdC80LXQvSDQuCDQt9Cw0YDQv9C70LDRgtGLIiwic2hvcnRfbmFtZSI6ItCi0LDQsdC10LvRjCIsInN0YXJ0X3VybCI6Ii4iLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMUIxRDFGIiwidGhlbWVfY29sb3IiOiIjMUIxRDFGIn0=">
+<title>Табель</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #1B1D1F;
+    --panel: #24272A;
+    --panel-alt: #2C3033;
+    --border: #383C3F;
+    --text: #EDEAE4;
+    --muted: #9A9D9F;
+    --amber: #FF9500;
+    --teal: #00E5FF;
+    --off: #6C6F72;
+    --danger: #FF4D6D;
+    --neon-white: #FFFFFF;
+    --radius: 10px;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono{ font-family:'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  #app{
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 20px 14px 60px;
+  }
+
+  /* ---- Header ---- */
+  .top{
+    display:flex;
+    flex-wrap: wrap;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .brand{
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .month-title{
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin-top: 2px;
+  }
+  .gear-btn{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .gear-btn svg{ width:16px; height:16px; }
+
+  .nav-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom: 14px;
+  }
+  .nav-btn{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-btn:active{ background: var(--panel-alt); }
+  .today-link{
+    font-size: 12px;
+    color: var(--amber);
+    cursor:pointer;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    max-width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  /* ---- Calendar ---- */
+  .weekdays{
+    display:grid;
+    grid-template-columns: repeat(7,1fr);
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .weekdays div{
+    text-align:center;
+    font-size: 11px;
+    color: var(--muted);
+    padding-bottom: 4px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(7,1fr);
+    gap: 4px;
+  }
+  .day{
+    aspect-ratio: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    position:relative;
+    padding: 2px;
+    min-height: 46px;
+    overflow: hidden;
+  }
+  .day.blank{ background:transparent; border-color:transparent; cursor:default; }
+  .day.today{ border-color: var(--amber); }
+  .day.selected{ box-shadow: 0 0 0 2px var(--text) inset; }
+  .day.in-range{ box-shadow: 0 0 0 2px var(--amber) inset; background: rgba(255,149,0,0.10); }
+  .day.in-range .num{ color:#FFFFFF; font-weight:700; }
+  .day .num{
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .day .amt{
+    font-size: 9px;
+    margin-top: 1px;
+    color: var(--muted);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .day.dayoff{ background: rgba(255,255,255,0.05); }
+  .day .bar{
+    position:absolute;
+    bottom:0; left:0; right:0;
+    height: 3px;
+    border-radius: 0 0 7px 7px;
+  }
+
+  /* ---- Editor ---- */
+  .editor{
+    margin-top: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: none;
+  }
+  .editor.open{ display:block; }
+  .editor .edate{
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .choice-row{
+    display:flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .choice{
+    flex: 1 1 auto;
+    min-width: 90px;
+    text-align:center;
+    padding: 9px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-alt);
+    font-size: 13px;
+    cursor:pointer;
+    color: var(--text);
+  }
+  .choice.active{
+    border-color: currentColor;
+    font-weight:600;
+  }
+  .hours-row{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    margin: 10px 0;
+  }
+  .hours-row label{ font-size: 13px; color: var(--muted); flex-shrink:0; }
+  .hours-row input{
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 14px;
+    width: 80px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .preview-pay{
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .preview-pay .v{
+    color: var(--text);
+    font-weight:600;
+    font-size: 16px;
+  }
+  .editor-actions{
+    display:flex;
+    justify-content:flex-end;
+    margin-top: 10px;
+  }
+  .clear-btn{
+    font-size: 12px;
+    color: var(--danger);
+    cursor:pointer;
+    padding: 6px 4px;
+  }
+
+  /* ---- Sections ---- */
+  .section{
+    margin-top: 22px;
+  }
+  .section-title{
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .summary-card{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .total-pay{
+    font-size: 28px;
+    font-weight: 600;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .total-sub{
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .wp-row{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .wp-dot{
+    width: 9px; height:9px; border-radius:2px; flex-shrink:0;
+  }
+  .wp-info{ flex:1; min-width:0; }
+  .wp-name{ font-size: 13px; }
+  .wp-bar-track{
+    height: 5px;
+    background: var(--panel-alt);
+    border-radius: 3px;
+    margin-top: 5px;
+    overflow:hidden;
+  }
+  .wp-bar-fill{ height:100%; border-radius:3px; }
+  .wp-pay{
+    font-size: 13px;
+    font-family:'IBM Plex Mono', monospace;
+    flex-shrink:0;
+  }
+
+  .week-list{
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+  }
+  .week-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .week-item .wl{ color: var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px; }
+  .week-item .wr{ font-family:'IBM Plex Mono', monospace; flex-shrink:0; }
+
+  /* ---- Settings ---- */
+  .settings{
+    margin-top: 22px;
+    display:none;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .settings.open{ display:block; }
+  .wp-edit{
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .wp-edit:last-child{ margin-bottom:0; }
+  .field{
+    margin-bottom: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .field label{
+    display:block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .field input, .field select{
+    width: 100%;
+    min-width: 0;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .color-swatches{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .swatch{
+    width: 26px; height:26px;
+    border-radius: 6px;
+    cursor:pointer;
+    border: 2px solid transparent;
+  }
+  .swatch.active{ border-color: var(--text); }
+  .rate-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .rate-row .field{ flex:1; min-width:120px; }
+  .date-trigger{
+    width: 100%;
+    box-sizing: border-box;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 14px;
+    cursor:pointer;
+  }
+
+  .loading{
+    text-align:center;
+    padding: 60px 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ---- Confirm dialog (own implementation — browser confirm()/alert() are blocked in this preview) ---- */
+  .confirm-overlay{
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    z-index: 1000;
+    padding: 14px;
+  }
+  .confirm-sheet{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    max-width: 480px;
+    width: 100%;
+  }
+  .confirm-msg{
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 16px;
+  }
+  .confirm-actions{ display:flex; gap:10px; }
+  .confirm-btn{
+    flex:1;
+    text-align:center;
+    padding: 12px;
+    border-radius: 9px;
+    font-size: 14px;
+    cursor:pointer;
+    border: 1px solid var(--border);
+  }
+  .confirm-btn.cancel{ background: var(--panel-alt); color: var(--text); }
+  .confirm-btn.danger{ background: var(--danger); border-color: var(--danger); color:#1B1D1F; font-weight:600; }
+  .confirm-btn.ok{ background: var(--amber); border-color: var(--amber); color:#1B1D1F; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">Загрузка…</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+  const SWATCH_COLORS = ['#FF9500','#00E5FF','#FF2FE0','#39FF14','#FFEE00','#FF3B3B','#7B2FFF','#00FFA3','#FF6EC7','#3D5CFF'];
+  const WEEKDAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  const MONTHS = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+
+  // Schema version of the persisted data. Bump this and add a step in migrateState()
+  // whenever the saved shape changes — never rename/remove existing fields, only add.
+  // This is how future updates avoid wiping out a user's existing shifts/workplaces.
+  const CURRENT_VERSION = 2;
+  const APP_BUILD = '2026-09-09';
+
+  let state = {
+    version: CURRENT_VERSION,
+    workplaces: [
+      { id:'w1', name:'Кофейня', color:'#FF9500', payType:'hourly', rate:300, currency:'₽' },
+      { id:'w2', name:'Кинотеатр', color:'#00E5FF', payType:'hourly', rate:300, currency:'₽' }
+    ],
+    shifts: {}
+  };
+
+  let view = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  let selectedDate = null;
+  let settingsOpen = false;
+  let patternOpen = false;
+  let analyticsOpen = false;
+  let editorPickerOpen = false;
+  let statsYear = new Date().getFullYear();
+  let lastWeekDateKeys = [];
+  let loaded = false;
+  let confirmState = null; // { message, action, alertOnly, confirmLabel }
+  let rangeMode = false;
+  let rangeStart = null;
+  let rangeEnd = null;
+  let lastSavedAt = null;
+  let storageBroken = false;
+  function pad(n){ return n<10 ? '0'+n : ''+n; }
+  function dateKey(y,m,d){ return y+'-'+pad(m+1)+'-'+pad(d); }
+  function todayKey(){ const t=new Date(); return dateKey(t.getFullYear(),t.getMonth(),t.getDate()); }
+  function yearBounds(year){ return { from: dateKey(year,0,1), to: dateKey(year,11,31) }; }
+
+  let patternForm = {
+    workplaceId: 'w1',
+    workDays: 2,
+    offDays: 2,
+    startDate: dateKey(new Date().getFullYear(), new Date().getMonth(), 1),
+    hours: 8,
+    fillMode: 'month' // 'month' = до конца месяца начиная с startDate, 'week' = до конца календарной недели (по воскресенье)
+  };
+  let exportForm = yearBounds(statsYear);
+
+  function getWorkplace(id){ return state.workplaces.find(w=>w.id===id); }
+
+  function calcPay(shift){
+    if(!shift || !shift.workplaceId) return 0;
+    const wp = getWorkplace(shift.workplaceId);
+    if(!wp) return 0;
+    if(wp.payType === 'hourly') return (shift.hours||0) * wp.rate;
+    return wp.rate;
+  }
+
+  function computeYearStats(year){
+    return computeRangeStats(year+'-01-01', year+'-12-31');
+  }
+
+  function computeRangeStats(from, to){
+    let f = from, t = to;
+    if(f && t && t < f){ const tmp=f; f=t; t=tmp; }
+    let totalPay=0, totalHours=0, totalShifts=0, totalOff=0;
+    const wpStats = {};
+    state.workplaces.forEach(w=> wpStats[w.id]={pay:0,hours:0,days:0});
+    Object.keys(state.shifts).forEach(k=>{
+      if(f && k<f) return;
+      if(t && k>t) return;
+      const s = state.shifts[k];
+      if(!s) return;
+      if(s.dayOff){ totalOff++; return; }
+      if(s.workplaceId){
+        const pay = calcPay(s);
+        totalPay += pay;
+        totalShifts++;
+        if(wpStats[s.workplaceId]){
+          wpStats[s.workplaceId].pay += pay;
+          wpStats[s.workplaceId].days++;
+          const wp = getWorkplace(s.workplaceId);
+          if(wp && wp.payType==='hourly'){
+            wpStats[s.workplaceId].hours += (s.hours||0);
+            totalHours += (s.hours||0);
+          }
+        }
+      }
+    });
+    return { totalPay, totalHours, totalShifts, totalOff, wpStats, from:f, to:t };
+  }
+
+  function fmtDateShort(k){
+    if(!k) return '';
+    const [yy,mm,dd] = k.split('-').map(Number);
+    return dd+' '+MONTHS[mm-1]+' '+yy;
+  }
+
+  // Свой выбор даты — всплывающий календарь на нашей же сетке, полностью на русском
+  // и без нативных <select>/<input type="date">, которые на iOS: (а) показывают
+  // системный язык вместо русского, (б) непредсказуемо себя ведут по ширине,
+  // (в) заставляют системный пикер выскакивать заново из-за перерисовки DOM.
+  let datePickerState = null; // { target: 'patternStart'|'exportFrom'|'exportTo', year, month }
+
+  function getDatePickerTargetValue(target){
+    if(target==='patternStart') return patternForm.startDate;
+    if(target==='exportFrom') return exportForm.from;
+    if(target==='exportTo') return exportForm.to;
+    return null;
+  }
+  function setDatePickerTargetValue(target, k){
+    if(target==='patternStart') patternForm.startDate = k;
+    else if(target==='exportFrom') exportForm.from = k;
+    else if(target==='exportTo') exportForm.to = k;
+  }
+
+  let cloudOk = true;
+
+  // Brings an older saved object up to CURRENT_VERSION, one step at a time.
+  // Add a new `if(v < N)` block here whenever CURRENT_VERSION is bumped —
+  // never delete or rename fields, only fill in new ones with safe defaults.
+  function migrateState(parsed){
+    let v = parsed.version || 1;
+    if(v < 2){
+      // v1 -> v2: multi-workplace support formalized. No structural change
+      // needed — normalizeState() already fills any missing workplace fields.
+      v = 2;
+    }
+    parsed.version = v;
+    return parsed;
+  }
+
+  function normalizeState(){
+    let list = Array.isArray(state.workplaces) ? state.workplaces.slice(0, 10) : [];
+    list = list.map((w,i)=>({
+      id: w && w.id ? w.id : ('w'+(i+1)),
+      name: w && w.name ? w.name : ('Работа '+(i+1)),
+      color: w && w.color ? w.color : SWATCH_COLORS[i % SWATCH_COLORS.length],
+      payType: (w && w.payType==='daily') ? 'daily' : 'hourly',
+      rate: (w && typeof w.rate==='number') ? w.rate : (parseFloat(w && w.rate) || 0),
+      currency: (w && w.currency) ? w.currency : '₽'
+    }));
+    if(list.length === 0){
+      list.push({ id:'w1', name:'Работа 1', color:SWATCH_COLORS[0], payType:'hourly', rate:0, currency:'₽' });
+    }
+    state.workplaces = list;
+    state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
+  }
+
+  function applyLoaded(raw){
+    let parsed = JSON.parse(raw);
+    parsed = migrateState(parsed);
+    if(parsed.workplaces) state.workplaces = parsed.workplaces;
+    if(parsed.shifts) state.shifts = parsed.shifts;
+    state.version = parsed.version;
+    normalizeState();
+  }
+
+  async function loadState(){
+    let gotCloud = false;
+    if(window.storage && typeof window.storage.get === 'function'){
+      try{
+        const res = await window.storage.get('wc-data', false);
+        if(res && res.value){ applyLoaded(res.value); gotCloud = true; }
+      }catch(e){ cloudOk = false; }
+    } else {
+      cloudOk = false; // не в артефакте Claude — своего облачного хранилища здесь нет
+    }
+    if(!gotCloud){
+      try{
+        const raw = localStorage.getItem('wc-data');
+        if(raw) applyLoaded(raw);
+      }catch(e){ /* no storage at all, stay in-memory */ }
+    }
+    normalizeState();
+    loaded = true;
+    render();
+  }
+
+  async function saveState(){
+    state.version = CURRENT_VERSION;
+    const raw = JSON.stringify(state);
+    // Сохраняем в localStorage СИНХРОННО и в первую очередь — это единственное
+    // хранилище, которое реально работает вне артефакта Claude (на GitHub Pages
+    // и т.д.), поэтому оно не должно зависеть от облака.
+    try{
+      localStorage.setItem('wc-data', raw);
+      storageBroken = false;
+      lastSavedAt = new Date();
+    }catch(e){
+      storageBroken = true;
+    }
+    if(cloudOk){
+      try{
+        await window.storage.set('wc-data', raw, false);
+      }catch(e){ cloudOk = false; }
+    }
+  }
+
+  function fmtMoney(n, currency){
+    const rounded = Math.round(n*100)/100;
+    return rounded.toLocaleString('ru-RU') + ' ' + (currency||'₽');
+  }
+
+  function sanitizeSheetName(name, fallback){
+    let s = String(name||fallback||'Лист').replace(/[:\\\/\?\*\[\]]/g,'').trim();
+    if(!s) s = fallback || 'Лист';
+    return s.slice(0,31);
+  }
+
+  function buildWorkplaceRows(wpId, from, to){
+    const wp = getWorkplace(wpId);
+    const keys = Object.keys(state.shifts).filter(k=>{
+      const s = state.shifts[k];
+      if(!s || s.workplaceId !== wpId) return false;
+      if(from && k < from) return false;
+      if(to && k > to) return false;
+      return true;
+    }).sort();
+    return keys.map(k=>{
+      const s = state.shifts[k];
+      const pay = calcPay(s);
+      return {
+        'Дата': k,
+        'Часов': (wp && wp.payType==='hourly') ? (s.hours||0) : '',
+        'Оплата': Math.round(pay*100)/100
+      };
+    });
+  }
+
+  function exportWorkbook(sheets, filename){
+    if(typeof XLSX === 'undefined'){
+      showAlert('Не удалось загрузить модуль экспорта — проверьте подключение к интернету и попробуйте ещё раз.');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const usedNames = {};
+    sheets.forEach((sh, i)=>{
+      let name = sanitizeSheetName(sh.name, 'Лист'+(i+1));
+      if(usedNames[name]){ usedNames[name]++; name = (name.slice(0,28) + '_' + usedNames[name]); }
+      else{ usedNames[name] = 1; }
+      const ws = XLSX.utils.json_to_sheet(sh.rows.length ? sh.rows : [{ 'Дата':'', 'Часов':'', 'Оплата':'' }]);
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    });
+    XLSX.writeFile(wb, filename);
+  }
+
+  function askConfirm(message, action, confirmLabel){
+    confirmState = { message, action, alertOnly:false, confirmLabel: confirmLabel || 'Да' };
+    render();
+  }
+  function showAlert(message){
+    confirmState = { message, action:null, alertOnly:true };
+    render();
+  }
+
+  function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+  function leadingBlanks(y,m){ return (new Date(y,m,1).getDay()+6)%7; }
+
+  function setHtmlPreservingFocus(container, html){
+    const active = document.activeElement;
+    let focusInfo = null;
+    // SELECT намеренно исключён: программный .focus() на пересозданном <select>
+    // на iOS Safari заново открывает системный пикер сразу после того, как
+    // пользователь его закрыл выбором варианта — это и было причиной
+    // «всплывающее окно не закрывается».
+    if(active && active.id && container.contains(active) && active.tagName !== 'SELECT'){
+      focusInfo = { id: active.id, start: null, end: null };
+      try{
+        if(typeof active.selectionStart === 'number'){
+          focusInfo.start = active.selectionStart;
+          focusInfo.end = active.selectionEnd;
+        }
+      }catch(e){ /* some input types don't support selection */ }
+    }
+    container.innerHTML = html;
+    if(focusInfo){
+      const el = document.getElementById(focusInfo.id);
+      if(el){
+        el.focus();
+        if(focusInfo.start != null){
+          try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){ /* ignore */ }
+        }
+      }
+    }
+  }
+
+  function renderDatePicker(){
+    if(!datePickerState) return '';
+    const y = datePickerState.year, m = datePickerState.month;
+    const nDays = daysInMonth(y,m);
+    const lead = leadingBlanks(y,m);
+    const curVal = getDatePickerTargetValue(datePickerState.target);
+    let html = '<div class="confirm-overlay" onclick="if(event.target===this) WC.closeDatePicker()">';
+    html += '  <div class="confirm-sheet">';
+    html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    html += '      <div class="nav-btn" onclick="WC.datePickerNav(-1)">‹</div>';
+    html += '      <div style="font-size:15px;font-weight:600;">'+MONTHS[m]+' '+y+'</div>';
+    html += '      <div class="nav-btn" onclick="WC.datePickerNav(1)">›</div>';
+    html += '    </div>';
+    html += '    <div class="weekdays">'+WEEKDAYS.map(w=>'<div>'+w+'</div>').join('')+'</div>';
+    html += '    <div class="grid" style="margin-bottom:14px;">';
+    for(let i=0;i<lead;i++) html += '<div class="day blank"></div>';
+    for(let d=1; d<=nDays; d++){
+      const k = dateKey(y,m,d);
+      const isSel = (k === curVal);
+      html += '<div class="day'+(isSel?' selected':'')+'" style="min-height:38px;'+(isSel?'background:rgba(255,149,0,0.14);box-shadow:0 0 0 2px var(--amber) inset;':'')+'" onclick="WC.datePickerPick('+d+')"><div class="num">'+d+'</div></div>';
+    }
+    html += '    </div>';
+    html += '    <div class="confirm-btn cancel" onclick="WC.closeDatePicker()">Закрыть</div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function render(){
+    if(!loaded) return;
+    const app = document.getElementById('app');
+    const y = view.year, m = view.month;
+    const nDays = daysInMonth(y,m);
+    const lead = leadingBlanks(y,m);
+    const tKey = todayKey();
+
+    // monthly aggregates
+    let monthPay=0, monthHours=0, workedDays=0, offDays=0;
+    const wpTotals = {};
+    state.workplaces.forEach(w=> wpTotals[w.id]={pay:0,hours:0,days:0});
+
+    for(let d=1; d<=nDays; d++){
+      const k = dateKey(y,m,d);
+      const s = state.shifts[k];
+      if(!s) continue;
+      if(s.dayOff){ offDays++; continue; }
+      if(s.workplaceId){
+        const pay = calcPay(s);
+        monthPay += pay;
+        workedDays++;
+        if(wpTotals[s.workplaceId]){
+          wpTotals[s.workplaceId].pay += pay;
+          wpTotals[s.workplaceId].days += 1;
+          if(getWorkplace(s.workplaceId).payType==='hourly'){
+            wpTotals[s.workplaceId].hours += (s.hours||0);
+            monthHours += (s.hours||0);
+          }
+        }
+      }
+    }
+
+    // weekly breakdown, grouped by calendar rows
+    const weeks = [];
+    lastWeekDateKeys = [];
+    let current = { pay:0, hours:0, shifts:0 };
+    let currentKeys = [];
+    let cellIndex = lead;
+    for(let d=1; d<=nDays; d++){
+      const k = dateKey(y,m,d);
+      const s = state.shifts[k];
+      currentKeys.push(k);
+      if(s && s.workplaceId){
+        const pay = calcPay(s);
+        current.pay += pay;
+        current.shifts += 1;
+        if(getWorkplace(s.workplaceId).payType==='hourly') current.hours += (s.hours||0);
+      }
+      cellIndex++;
+      if(cellIndex % 7 === 0 || d === nDays){
+        weeks.push(current);
+        lastWeekDateKeys.push(currentKeys);
+        current = { pay:0, hours:0, shifts:0 };
+        currentKeys = [];
+      }
+    }
+
+    let html = '';
+
+    if(storageBroken){
+      html += '<div style="background:rgba(255,77,109,0.15);border:1px solid var(--danger);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.4;">⚠ Не удалось сохранить данные в этом браузере (возможно, включён приватный режим или закончилось место). Изменения могут потеряться — скачай резервную копию в настройках.</div>';
+    }
+
+    // header
+    html += '<div class="top">';
+    html += '  <div><div class="brand">Табель</div><div class="month-title">'+MONTHS[m]+' '+y+'</div></div>';
+    html += '  <div style="display:flex;gap:6px;flex-shrink:0;">';
+    html += '    <div class="gear-btn" onclick="WC.toggleAnalytics()" title="Статистика и экспорт">'+analyticsIcon()+'</div>';
+    html += '    <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
+    html += '    <div class="gear-btn" onclick="WC.toggleSettings()">'+gearIcon()+'</div>';
+    html += '  </div>';
+    html += '</div>';
+
+    html += '<div class="nav-row">';
+    html += '  <div class="nav-btn" onclick="WC.prevMonth()">‹</div>';
+    html += '  <div class="today-link" onclick="WC.goToday()">Сегодня</div>';
+    html += '  <div class="nav-btn" onclick="WC.nextMonth()">›</div>';
+    html += '</div>';
+
+    html += '<div style="display:flex;justify-content:center;margin-bottom:14px;">';
+    html += '  <div class="today-link" style="'+(rangeMode?'color:var(--amber);border-color:var(--amber);':'')+'" onclick="WC.toggleRangeMode()">'+(rangeMode?'Выйти из режима периода':'Выбрать период на календаре')+'</div>';
+    html += '</div>';
+
+    // settings, pattern & analytics panels (right below header so they're visible immediately when opened)
+    html += renderAnalyticsPanel();
+    html += renderPatternPanel();
+    html += renderSettings();
+
+    // weekday labels
+    html += '<div class="weekdays">' + WEEKDAYS.map(w=>'<div>'+w+'</div>').join('') + '</div>';
+
+    // grid
+    html += '<div class="grid">';
+    for(let i=0;i<lead;i++) html += '<div class="day blank"></div>';
+    for(let d=1; d<=nDays; d++){
+      const k = dateKey(y,m,d);
+      const s = state.shifts[k];
+      let cls = 'day';
+      if(k===tKey) cls += ' today';
+      if(k===selectedDate) cls += ' selected';
+      if(rangeMode && rangeStart){
+        const rf = (rangeEnd && rangeEnd<rangeStart) ? rangeEnd : rangeStart;
+        const rt = rangeEnd ? ((rangeEnd<rangeStart) ? rangeStart : rangeEnd) : rangeStart;
+        if(k>=rf && k<=rt) cls += ' in-range';
+      }
+      let bar = '', amt = '', amtStyle = '';
+      if(s && s.dayOff){
+        cls += ' dayoff';
+        amt = 'вых';
+        amtStyle = 'color:#FFFFFF;text-shadow:0 0 5px rgba(255,255,255,0.9)';
+        bar = '<div class="bar" style="background:#FFFFFF;box-shadow:0 0 6px #FFFFFF"></div>';
+      } else if(s && s.workplaceId){
+        const wp = getWorkplace(s.workplaceId);
+        if(wp){
+          bar = '<div class="bar" style="background:'+wp.color+';box-shadow:0 0 6px '+wp.color+'"></div>';
+          const pay = calcPay(s);
+          amt = pay > 0 ? Math.round(pay).toLocaleString('ru-RU') : '';
+          amtStyle = 'color:'+wp.color+';text-shadow:0 0 4px '+wp.color+'99';
+        }
+      }
+      html += '<div class="'+cls+'" onclick="WC.dayTap(\''+k+'\')">';
+      html += '  <div class="num">'+d+'</div>';
+      html += '  <div class="amt mono" style="'+amtStyle+'">'+amt+'</div>';
+      html += bar;
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // editor
+    html += renderEditor(selectedDate);
+    html += renderRangePanel();
+
+    // monthly summary
+    html += '<div class="section">';
+    html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Итого за месяц</span><span class="clear-btn" onclick="WC.clearMonth()">Очистить</span></div>';
+    html += '  <div class="summary-card">';
+    html += '    <div class="total-pay mono">'+fmtMoney(monthPay, state.workplaces[0]?.currency)+'</div>';
+    html += '    <div class="total-sub">'+workedDays+' смен · '+monthHours+' ч · '+offDays+' вых.</div>';
+    state.workplaces.forEach(w=>{
+      const t = wpTotals[w.id];
+      const pct = monthPay>0 ? Math.round((t.pay/monthPay)*100) : 0;
+      html += '    <div class="wp-row">';
+      html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
+      html += '      <div class="wp-info">';
+      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
+      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
+      html += '      </div>';
+      html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
+      html += '    </div>';
+    });
+    html += '  </div>';
+    html += '</div>';
+
+    // weekly breakdown
+    html += '<div class="section">';
+    html += '  <div class="section-title">По неделям</div>';
+    html += '  <div class="week-list">';
+    weeks.forEach((w,i)=>{
+      html += '    <div class="week-item"><span class="wl">Неделя '+(i+1)+' · '+w.shifts+' смен'+(w.hours ? ' · '+w.hours+' ч' : '')+'</span><div style="display:flex;align-items:center;gap:10px;"><span class="wr">'+fmtMoney(w.pay, state.workplaces[0]?.currency)+'</span><span class="clear-btn" onclick="WC.clearWeek('+i+')">✕</span></div></div>';
+    });
+    html += '  </div>';
+    html += '</div>';
+
+    if(confirmState){
+      html += '<div class="confirm-overlay" onclick="if(event.target===this) WC.confirmNo()">';
+      html += '  <div class="confirm-sheet">';
+      html += '    <div class="confirm-msg">'+esc(confirmState.message)+'</div>';
+      html += '    <div class="confirm-actions">';
+      if(confirmState.alertOnly){
+        html += '      <div class="confirm-btn ok" onclick="WC.confirmNo()">Понятно</div>';
+      } else {
+        html += '      <div class="confirm-btn cancel" onclick="WC.confirmNo()">Отмена</div>';
+        html += '      <div class="confirm-btn danger" onclick="WC.confirmYes()">'+esc(confirmState.confirmLabel||'Да')+'</div>';
+      }
+      html += '    </div>';
+      html += '  </div>';
+      html += '</div>';
+    }
+
+    html += renderDatePicker();
+
+    setHtmlPreservingFocus(app, html);
+  }
+
+  function renderEditor(k){
+    if(!k) return '';
+    const [y,m,d] = k.split('-').map(Number);
+    const s = state.shifts[k] || {};
+    const dateObj = new Date(y, m-1, d);
+    const weekdayName = ['вс','пн','вт','ср','чт','пт','сб'][dateObj.getDay()];
+
+    let html = '<div class="editor open">';
+    html += '  <div class="edate">'+d+' '+MONTHS[m-1]+', '+weekdayName+'</div>';
+
+    const hasAssignment = !!(s.workplaceId || s.dayOff);
+    const showPicker = editorPickerOpen || !hasAssignment;
+
+    if(showPicker){
+      html += '  <div class="choice-row">';
+      state.workplaces.forEach(w=>{
+        const active = s.workplaceId === w.id;
+        html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.pickWorkplace(\''+w.id+'\')">'+esc(w.name)+'</div>';
+      });
+      html += '    <div class="choice'+(s.dayOff?' active':'')+'" style="color:#FFFFFF'+(s.dayOff?';background:rgba(255,255,255,0.15);box-shadow:0 0 10px #FFFFFF':'')+'" onclick="WC.pickDayOff()">Выходной</div>';
+      html += '  </div>';
+    } else {
+      let label = '', color = '#FFFFFF';
+      if(s.dayOff){ label = 'Выходной'; color = '#FFFFFF'; }
+      else{ const wp = getWorkplace(s.workplaceId); label = wp ? wp.name : '—'; color = wp ? wp.color : '#FFFFFF'; }
+      html += '  <div class="choice-row">';
+      html += '    <div class="choice active" style="color:'+color+';background:'+color+'22;box-shadow:0 0 10px '+color+';flex:none;">'+esc(label)+'</div>';
+      html += '    <div class="choice" style="color:var(--muted);flex:none;" onclick="WC.reopenPicker()">Изменить</div>';
+      html += '  </div>';
+    }
+
+    if(s.workplaceId){
+      const wp = getWorkplace(s.workplaceId);
+      if(wp && wp.payType==='hourly'){
+        html += '  <div class="hours-row"><label>Часов</label><input type="number" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
+      }
+      const pay = calcPay(s);
+      html += '  <div class="preview-pay">Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span></div>';
+    }
+
+    html += '  <div class="editor-actions">';
+    if(s.workplaceId || s.dayOff){
+      html += '    <div class="clear-btn" onclick="WC.clearDay()">Очистить день</div>';
+    }
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderRangePanel(){
+    if(!rangeMode) return '';
+    let html = '<div class="editor open" style="border-left-color:var(--amber);">';
+    if(!rangeStart){
+      html += '  <div class="edate">Отметьте на календаре день начала периода</div>';
+    } else {
+      const rf = (rangeEnd && rangeEnd<rangeStart) ? rangeEnd : rangeStart;
+      const rt = rangeEnd ? ((rangeEnd<rangeStart) ? rangeStart : rangeEnd) : rangeStart;
+      const stats = computeRangeStats(rf, rt);
+      html += '  <div class="edate">Период: '+fmtDateShort(rf)+' — '+fmtDateShort(rt)+'</div>';
+      html += '  <div class="summary-card" style="padding:14px;">';
+      html += '    <div class="total-pay mono">'+fmtMoney(stats.totalPay, state.workplaces[0]?.currency)+'</div>';
+      html += '    <div class="total-sub">'+stats.totalShifts+' смен · '+stats.totalHours+' ч · '+stats.totalOff+' вых.</div>';
+      state.workplaces.forEach(w=>{
+        const t = stats.wpStats[w.id] || {pay:0,hours:0,days:0};
+        const pct = stats.totalPay>0 ? Math.round((t.pay/stats.totalPay)*100) : 0;
+        html += '    <div class="wp-row">';
+        html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
+        html += '      <div class="wp-info">';
+        html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
+        html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
+        html += '      </div>';
+        html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
+        html += '    </div>';
+      });
+      html += '  </div>';
+    }
+    html += '  <div class="editor-actions" style="justify-content:space-between;margin-top:12px;">';
+    html += '    <span></span>';
+    if(rangeStart){ html += '    <div class="clear-btn" style="color:var(--amber);" onclick="WC.resetRange()">Выбрать заново</div>'; }
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderPatternPanel(){
+    let html = '<div class="settings'+(patternOpen?' open':'')+'">';
+    html += '  <div class="section-title">График по шаблону</div>';
+
+    html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
+    state.workplaces.forEach(w=>{
+      const active = patternForm.workplaceId === w.id;
+      html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPatternField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
+    });
+    html += '  </div></div>';
+
+    html += '  <div class="field"><label>Быстрый выбор</label><div class="choice-row">';
+    [[2,2],[3,3],[4,3],[5,2]].forEach(p=>{
+      const active = patternForm.workDays===p[0] && patternForm.offDays===p[1];
+      html += '<div class="choice'+(active?' active':'')+'" style="color:var(--amber)'+(active?';background:#FF950022;box-shadow:0 0 10px var(--amber)':'')+'" onclick="WC.setPatternPreset('+p[0]+','+p[1]+')">'+p[0]+'/'+p[1]+'</div>';
+    });
+    html += '  </div></div>';
+
+    html += '  <div class="rate-row">';
+    html += '    <div class="field"><label>Смен подряд</label><input type="number" min="1" id="patternWorkDays" value="'+patternForm.workDays+'" oninput="WC.setPatternField(\'workDays\', this.value)"></div>';
+    html += '    <div class="field"><label>Выходных подряд</label><input type="number" min="0" id="patternOffDays" value="'+patternForm.offDays+'" oninput="WC.setPatternField(\'offDays\', this.value)"></div>';
+    html += '  </div>';
+
+    html += '  <div class="field"><label>Начать с</label><div class="date-trigger" onclick="WC.openDatePicker(\'patternStart\')">'+fmtDateShort(patternForm.startDate)+'<span style="color:var(--muted);">▾</span></div></div>';
+
+    html += '  <div class="field"><label>Заполнить</label><div class="choice-row">';
+    html += '<div class="choice'+(patternForm.fillMode==='month'?' active':'')+'" style="color:var(--teal)'+(patternForm.fillMode==='month'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPatternFillMode(\'month\')">До конца месяца</div>';
+    html += '<div class="choice'+(patternForm.fillMode==='week'?' active':'')+'" style="color:var(--teal)'+(patternForm.fillMode==='week'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPatternFillMode(\'week\')">До конца недели (по вс.)</div>';
+    html += '  </div></div>';
+
+    const wp = getWorkplace(patternForm.workplaceId);
+    if(wp && wp.payType==='hourly'){
+      html += '  <div class="field"><label>Часов за смену</label><input type="number" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    }
+
+    html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
+    html += '    <div class="choice active" style="flex:none;color:var(--amber);background:#FF950022;box-shadow:0 0 10px var(--amber);cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderAnalyticsPanel(){
+    let html = '<div class="settings'+(analyticsOpen?' open':'')+'">';
+    html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">';
+    html += '    <span>Статистика за год</span>';
+    html += '    <span style="display:flex;align-items:center;gap:8px;">';
+    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.prevStatsYear()">‹</span>';
+    html += '      <span class="mono" style="font-size:13px;">'+statsYear+'</span>';
+    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.nextStatsYear()">›</span>';
+    html += '    </span>';
+    html += '  </div>';
+
+    const ys = computeYearStats(statsYear);
+    html += '  <div class="summary-card" style="margin-bottom:16px;">';
+    html += '    <div class="total-pay mono">'+fmtMoney(ys.totalPay, state.workplaces[0]?.currency)+'</div>';
+    html += '    <div class="total-sub">'+ys.totalShifts+' смен · '+ys.totalHours+' ч · '+ys.totalOff+' вых. за год</div>';
+    state.workplaces.forEach(w=>{
+      const t = ys.wpStats[w.id] || {pay:0,hours:0,days:0};
+      const pct = ys.totalPay>0 ? Math.round((t.pay/ys.totalPay)*100) : 0;
+      html += '    <div class="wp-row">';
+      html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
+      html += '      <div class="wp-info">';
+      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
+      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
+      html += '      </div>';
+      html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
+      html += '    </div>';
+    });
+    html += '  </div>';
+
+    html += '  <div class="section-title">Экспорт в Excel</div>';
+    html += '  <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportFrom\')">'+fmtDateShort(exportForm.from)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '  <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportTo\')">'+fmtDateShort(exportForm.to)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '  <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">';
+    state.workplaces.forEach(w=>{
+      html += '    <div class="week-item" style="cursor:pointer;" onclick="WC.exportWorkplace(\''+w.id+'\')"><span class="wl">Скачать: '+esc(w.name)+'</span><span style="color:'+w.color+'">⭳ .xlsx</span></div>';
+    });
+    html += '    <div class="week-item" style="cursor:pointer;border-color:var(--amber);" onclick="WC.exportAll()"><span class="wl" style="color:var(--text);">Скачать всё (все места работы)</span><span style="color:var(--amber)">⭳ .xlsx</span></div>';
+    html += '  </div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function renderSettings(){
+    let html = '<div class="settings'+(settingsOpen?' open':'')+'">';
+    html += '  <div class="section-title">Места работы</div>';
+    state.workplaces.forEach((w,idx)=>{
+      html += '  <div class="wp-edit">';
+      html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      html += '      <span style="font-size:11px;color:var(--muted);">Место работы '+(idx+1)+'</span>';
+      if(state.workplaces.length > 1){
+        html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
+      }
+      html += '    </div>';
+      html += '    <div class="field"><label>Название</label><input type="text" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.updateWp('+idx+',\'name\',this.value)"></div>';
+      html += '    <div class="field"><label>Тип оплаты</label><div class="choice-row">';
+      html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:var(--teal)'+(w.payType==='hourly'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
+      html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:var(--teal)'+(w.payType==='daily'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
+      html += '    </div></div>';
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="number" min="0" id="wpRateInput'+idx+'" value="'+w.rate+'" oninput="WC.updateWp('+idx+',\'rate\',this.value)"></div>';
+      html += '      <div class="field"><label>Валюта</label><input type="text" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.updateWp('+idx+',\'currency\',this.value)"></div>';
+      html += '    </div>';
+      html += '    <div class="field"><label>Цвет</label><div class="color-swatches">';
+      SWATCH_COLORS.forEach(c=>{
+        const active = w.color===c;
+        html += '<div class="swatch'+(active?' active':'')+'" style="background:'+c+(active?';box-shadow:0 0 8px '+c:'')+'" onclick="WC.updateWp('+idx+',\'color\',\''+c+'\')"></div>';
+      });
+      html += '    </div></div>';
+      html += '  </div>';
+    });
+    if(state.workplaces.length < 10){
+      html += '  <div class="choice" style="text-align:center;color:var(--amber);box-shadow:none;margin-top:4px;" onclick="WC.addWorkplace()">+ Добавить место работы</div>';
+    } else {
+      html += '  <div style="text-align:center;color:var(--muted);font-size:12px;margin-top:4px;">Достигнут лимит — 10 мест работы</div>';
+    }
+
+    html += '  <div class="section-title" style="margin-top:20px;">Резервная копия</div>';
+    html += '  <div style="display:flex;flex-direction:column;gap:8px;">';
+    html += '    <div class="week-item" style="cursor:pointer;" onclick="WC.exportBackup()"><span class="wl" style="color:var(--text);">Скачать резервную копию (.json)</span><span style="color:var(--amber);flex-shrink:0;">⭳</span></div>';
+    html += '    <div class="week-item" style="cursor:pointer;" onclick="WC.importBackupClick()"><span class="wl" style="color:var(--text);">Восстановить из файла</span><span style="color:var(--teal);flex-shrink:0;">⭱</span></div>';
+    html += '  </div>';
+    html += '  <input type="file" id="backupFileInput" accept="application/json" style="display:none" onchange="WC.handleBackupFile(this.files[0])">';
+
+    const savedLabel = lastSavedAt
+      ? ('Сохранено в этом браузере: '+lastSavedAt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))
+      : 'Пока ничего не сохранялось в этом браузере';
+    html += '  <div style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;line-height:1.5;">'+savedLabel+'<br>Версия приложения: '+APP_BUILD+'</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function analyticsIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-6 3 4 5-8"/></svg>';
+  }
+
+  function patternIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="7" rx="1.5"/><rect x="14" y="15" width="7" height="7" rx="1.5"/></svg>';
+  }
+
+  function gearIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+  }
+
+  window.WC = {
+    prevMonth(){ view.month--; if(view.month<0){view.month=11; view.year--;} selectedDate=null; render(); },
+    nextMonth(){ view.month++; if(view.month>11){view.month=0; view.year++;} selectedDate=null; render(); },
+    goToday(){ const t=new Date(); view.year=t.getFullYear(); view.month=t.getMonth(); selectedDate=todayKey(); render(); },
+    toggleSettings(){
+      settingsOpen = !settingsOpen;
+      if(settingsOpen){ patternOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null; }
+      render();
+    },
+    toggleAnalytics(){
+      if(!analyticsOpen){
+        exportForm = yearBounds(statsYear);
+        settingsOpen=false; patternOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null;
+      }
+      analyticsOpen = !analyticsOpen;
+      render();
+    },
+    prevStatsYear(){ statsYear--; render(); },
+    nextStatsYear(){ statsYear++; render(); },
+    setExportField(key, value){ exportForm[key] = value; render(); },
+    openDatePicker(target){
+      const cur = getDatePickerTargetValue(target) || todayKey();
+      const parts = String(cur).split('-').map(Number);
+      datePickerState = { target, year: parts[0], month: parts[1]-1 };
+      render();
+    },
+    datePickerNav(dir){
+      if(!datePickerState) return;
+      datePickerState.month += dir;
+      if(datePickerState.month<0){ datePickerState.month=11; datePickerState.year--; }
+      if(datePickerState.month>11){ datePickerState.month=0; datePickerState.year++; }
+      render();
+    },
+    datePickerPick(day){
+      if(!datePickerState) return;
+      const k = dateKey(datePickerState.year, datePickerState.month, day);
+      setDatePickerTargetValue(datePickerState.target, k);
+      datePickerState = null;
+      render();
+    },
+    closeDatePicker(){ datePickerState = null; render(); },
+    exportWorkplace(wpId){
+      const wp = getWorkplace(wpId);
+      const rows = buildWorkplaceRows(wpId, exportForm.from, exportForm.to);
+      const name = wp ? wp.name : 'Работа';
+      exportWorkbook([{ name, rows }], name.replace(/[\\\/:\*\?"<>\|]/g,'') + '_' + exportForm.from + '_' + exportForm.to + '.xlsx');
+    },
+    exportAll(){
+      const allKeys = Object.keys(state.shifts).filter(k=> (!exportForm.from || k>=exportForm.from) && (!exportForm.to || k<=exportForm.to)).sort();
+      const combinedRows = allKeys.map(k=>{
+        const s = state.shifts[k];
+        if(s.dayOff) return { 'Дата':k, 'Место':'Выходной', 'Часов':'', 'Оплата':0 };
+        const wp = getWorkplace(s.workplaceId);
+        const pay = calcPay(s);
+        return {
+          'Дата': k,
+          'Место': wp ? wp.name : '—',
+          'Часов': (wp && wp.payType==='hourly') ? (s.hours||0) : '',
+          'Оплата': Math.round(pay*100)/100
+        };
+      });
+      const sheets = [{ name:'Все', rows: combinedRows }];
+      state.workplaces.forEach(w=> sheets.push({ name: w.name, rows: buildWorkplaceRows(w.id, exportForm.from, exportForm.to) }));
+      exportWorkbook(sheets, 'Табель-полный_'+exportForm.from+'_'+exportForm.to+'.xlsx');
+    },
+    togglePattern(){
+      if(!patternOpen){
+        settingsOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null;
+      }
+      patternOpen = !patternOpen;
+      render();
+    },
+    setPatternField(key, value){
+      if(key==='workDays' || key==='offDays' || key==='hours'){
+        patternForm[key] = value==='' ? '' : parseFloat(value);
+      } else {
+        patternForm[key] = value;
+      }
+      render();
+    },
+    setPatternPreset(w, o){ patternForm.workDays = w; patternForm.offDays = o; render(); },
+    setPatternFillMode(mode){ patternForm.fillMode = mode; render(); },
+    applyPattern(){
+      const wd = Math.max(1, Math.round(patternForm.workDays || 0));
+      const od = Math.max(0, Math.round(patternForm.offDays || 0));
+      const cycle = wd + od;
+      const parts = String(patternForm.startDate||'').split('-').map(Number);
+      if(parts.length !== 3 || parts.some(isNaN)) return;
+      const [sy, sm, sd] = parts;
+      const startD = new Date(sy, sm-1, sd);
+      let endD;
+      if(patternForm.fillMode === 'week'){
+        const dow = (startD.getDay()+6)%7; // 0=понедельник ... 6=воскресенье
+        const daysUntilSunday = 6 - dow;
+        endD = new Date(sy, sm-1, sd + daysUntilSunday);
+      } else {
+        endD = new Date(sy, sm-1, daysInMonth(sy, sm-1));
+      }
+      const wp = getWorkplace(patternForm.workplaceId);
+      let i = 0;
+      let cur = new Date(startD);
+      while(cur <= endD){
+        const k = dateKey(cur.getFullYear(), cur.getMonth(), cur.getDate());
+        if(i % cycle < wd){
+          state.shifts[k] = { workplaceId: patternForm.workplaceId, hours: (wp && wp.payType==='hourly') ? (patternForm.hours||0) : undefined, dayOff:false };
+        } else {
+          state.shifts[k] = { dayOff:true };
+        }
+        i++;
+        cur.setDate(cur.getDate()+1);
+      }
+      view.year = sy; view.month = sm-1;
+      selectedDate = null;
+      saveState(); render();
+    },
+    selectDay(k){
+      selectedDate = (selectedDate===k) ? null : k;
+      editorPickerOpen = false;
+      render();
+    },
+    dayTap(k){
+      if(rangeMode){
+        if(!rangeStart || rangeEnd){ rangeStart = k; rangeEnd = null; }
+        else { rangeEnd = k; }
+        render();
+      } else {
+        WC.selectDay(k);
+      }
+    },
+    toggleRangeMode(){
+      rangeMode = !rangeMode;
+      rangeStart = null; rangeEnd = null; selectedDate = null;
+      if(rangeMode){ settingsOpen=false; patternOpen=false; analyticsOpen=false; }
+      render();
+    },
+    resetRange(){ rangeStart = null; rangeEnd = null; render(); },
+    confirmYes(){
+      const cs = confirmState;
+      confirmState = null;
+      if(cs && cs.action) cs.action();
+      else render();
+    },
+    confirmNo(){ confirmState = null; render(); },
+    reopenPicker(){ editorPickerOpen = true; render(); },
+    pickWorkplace(wpId){
+      if(!selectedDate) return;
+      const existing = state.shifts[selectedDate] || {};
+      state.shifts[selectedDate] = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : undefined, dayOff:false };
+      editorPickerOpen = false;
+      saveState(); render();
+    },
+    pickDayOff(){
+      if(!selectedDate) return;
+      const cur = state.shifts[selectedDate];
+      if(cur && cur.dayOff){ delete state.shifts[selectedDate]; }
+      else { state.shifts[selectedDate] = { dayOff:true }; }
+      editorPickerOpen = false;
+      saveState(); render();
+    },
+    clearMonth(){
+      askConfirm('Очистить все смены и выходные за '+MONTHS[view.month]+' '+view.year+'? Действие нельзя отменить.', function(){
+        const prefix = view.year+'-'+pad(view.month+1)+'-';
+        Object.keys(state.shifts).forEach(k=>{ if(k.indexOf(prefix)===0) delete state.shifts[k]; });
+        selectedDate = null;
+        saveState(); render();
+      });
+    },
+    clearWeek(idx){
+      const keys = lastWeekDateKeys[idx] || [];
+      if(keys.length===0) return;
+      askConfirm('Очистить неделю '+(idx+1)+'?', function(){
+        keys.forEach(k=>{ delete state.shifts[k]; });
+        selectedDate = null;
+        saveState(); render();
+      });
+    },
+    setHours(v){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate];
+      if(!s) return;
+      s.hours = v==='' ? undefined : parseFloat(v);
+      saveState(); render();
+    },
+    clearDay(){
+      if(!selectedDate) return;
+      delete state.shifts[selectedDate];
+      editorPickerOpen = false;
+      saveState(); render();
+    },
+    updateWp(idx, key, value){
+      const w = state.workplaces[idx];
+      if(!w) return;
+      if(key==='rate') w.rate = parseFloat(value)||0;
+      else w[key] = value;
+      saveState(); render();
+    },
+    exportBackup(){
+      const raw = JSON.stringify(state, null, 2);
+      const blob = new Blob([raw], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tabel-backup-'+todayKey()+'.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 1000);
+    },
+    importBackupClick(){
+      const el = document.getElementById('backupFileInput');
+      if(el) el.click();
+    },
+    handleBackupFile(file){
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e){
+        let parsed;
+        try{ parsed = JSON.parse(e.target.result); }
+        catch(err){ showAlert('Не удалось прочитать файл — это не похоже на резервную копию из этого приложения.'); return; }
+        if(!parsed || (!parsed.workplaces && !parsed.shifts)){
+          showAlert('Файл не похож на резервную копию этого приложения.');
+          return;
+        }
+        askConfirm('Восстановить данные из файла? Текущие смены и места работы будут заменены.', function(){
+          const migrated = migrateState(parsed);
+          if(migrated.workplaces) state.workplaces = migrated.workplaces;
+          if(migrated.shifts) state.shifts = migrated.shifts;
+          state.version = migrated.version;
+          normalizeState();
+          saveState(); render();
+        });
+      };
+      reader.readAsText(file);
+    },
+    addWorkplace(){
+      if(state.workplaces.length >= 10){ showAlert('Максимум 10 мест работы.'); return; }
+      const idx = state.workplaces.length;
+      state.workplaces.push({
+        id: 'w'+Date.now(),
+        name: 'Работа '+(idx+1),
+        color: SWATCH_COLORS[idx % SWATCH_COLORS.length],
+        payType: 'hourly',
+        rate: 0,
+        currency: '₽'
+      });
+      saveState(); render();
+    },
+    removeWorkplace(idx){
+      if(state.workplaces.length <= 1){ showAlert('Должно остаться хотя бы одно место работы.'); return; }
+      const w = state.workplaces[idx];
+      if(!w) return;
+      askConfirm('Удалить «'+w.name+'»? Все смены, отмеченные для этого места работы, тоже будут очищены.', function(){
+        Object.keys(state.shifts).forEach(k=>{ if(state.shifts[k] && state.shifts[k].workplaceId===w.id) delete state.shifts[k]; });
+        const i = state.workplaces.indexOf(w);
+        if(i>-1) state.workplaces.splice(i,1);
+        if(patternForm.workplaceId === w.id && state.workplaces[0]){ patternForm.workplaceId = state.workplaces[0].id; }
+        saveState(); render();
+      });
+    }
+  };
+
+  loadState();
+})();
+</script>
+</body>
+</html>
