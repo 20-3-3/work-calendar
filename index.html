@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Табель">
-<meta name="theme-color" content="#1B1D1F">
+<meta name="theme-color" content="#000000">
 <script>
 // Применяем тему максимально рано (до отрисовки), чтобы не было "вспышки" не той темы
 (function(){
@@ -31,24 +31,25 @@
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
   :root{
-    --bg: #1B1D1F;
-    --panel: #24272A;
-    --panel-alt: #2C3033;
-    --border: #383C3F;
-    --text: #EDEAE4;
-    --muted: #9A9D9F;
+    --bg: #000000;
+    --panel: #1C1C1E;
+    --panel-alt: #2C2C2E;
+    --border: rgba(84,84,88,0.45);
+    --text: #FFFFFF;
+    --muted: #8E8E93;
     --amber: #FF9500;
     --teal: #00E5FF;
-    --violet: #7B2FFF;
+    --violet: #9B5CFF;
     --off: #6C6F72;
     --danger: #FF4D6D;
     --neon-white: #FFFFFF;
     --off-accent: #FFFFFF;
     --off-accent-bg: rgba(255,255,255,0.15);
-    --dayoff-tint: rgba(255,255,255,0.05);
+    --dayoff-tint: rgba(255,255,255,0.07);
     --radius: 10px;
   }
   :root.light-theme{
+    --violet: #7B2FFF;
     --bg: #F4F2EE;
     --panel: #FFFFFF;
     --panel-alt: #ECE9E2;
@@ -615,6 +616,82 @@
   @media (prefers-reduced-motion: reduce){
     .tab-lens, .tab-item{ transition:none; }
   }
+
+  /* ================================================================
+     Тёмная тема в стиле системных приложений iOS (Телефон, App Store):
+     чёрный фон, серые подложки без рамок, крупные скругления,
+     кнопки-капсулы и круглые кнопки, тонкий блик по верхнему краю.
+     Неоновая подсветка активных элементов сохраняется.
+     ================================================================ */
+  :root:not(.light-theme) .gear-btn,
+  :root:not(.light-theme) .nav-btn{
+    width: 38px; height: 38px;
+    border-color: transparent;
+    border-radius: 50%;
+    background: var(--panel);
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.16);
+  }
+  :root:not(.light-theme) .nav-btn:active{ background: var(--panel-alt); }
+  :root:not(.light-theme) .today-link{
+    border-color: transparent;
+    background: var(--panel);
+    padding: 8px 14px;
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.14);
+  }
+  :root:not(.light-theme) .day{
+    border-color: transparent;
+    border-radius: 12px;
+  }
+  :root:not(.light-theme) .day.today{ border-color: var(--amber); }
+  :root:not(.light-theme) .day.blank{ background: transparent; }
+  :root:not(.light-theme) .editor{
+    border-color: transparent;
+    border-left-color: var(--amber);
+    border-radius: 20px;
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.10);
+  }
+  :root:not(.light-theme) .choice{
+    border-color: transparent;
+    border-radius: 999px;
+    background: var(--panel-alt);
+  }
+  :root:not(.light-theme) .choice.active{ border-color: currentColor; }
+  :root:not(.light-theme) .summary-card,
+  :root:not(.light-theme) .settings{
+    border-color: transparent;
+    border-radius: 24px;
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.12);
+  }
+  :root:not(.light-theme) .week-item{
+    border-color: transparent;
+    border-radius: 16px;
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.08);
+  }
+  :root:not(.light-theme) .wp-edit{
+    border-color: rgba(255,255,255,0.07);
+    border-radius: 18px;
+  }
+  :root:not(.light-theme) .field input,
+  :root:not(.light-theme) .hours-row input,
+  :root:not(.light-theme) .date-trigger{
+    border-color: transparent;
+    border-radius: 12px;
+  }
+  :root:not(.light-theme) .swatch{ border-radius: 50%; }
+  :root:not(.light-theme) .confirm-overlay{ background: rgba(0,0,0,0.55); }
+  :root:not(.light-theme) .confirm-sheet{
+    border-color: transparent;
+    border-radius: 28px;
+    box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.14), 0 20px 50px rgba(0,0,0,0.6);
+  }
+  :root:not(.light-theme) .confirm-btn{
+    border-color: transparent;
+    border-radius: 999px;
+  }
+  :root:not(.light-theme) .confirm-btn.danger,
+  :root:not(.light-theme) .confirm-btn.ok{ color:#000; }
+  /* Нижняя панель — серое стекло, как в «Телефоне» и App Store */
+  :root:not(.light-theme) .tab-bar{ background: rgba(37,37,40,0.70); }
 </style>
 </head>
 <body>
@@ -636,7 +713,7 @@
     const light = isLightActive();
     document.documentElement.classList.toggle('light-theme', light);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if(meta) meta.setAttribute('content', light ? '#F4F2EE' : '#1B1D1F');
+    if(meta) meta.setAttribute('content', light ? '#F4F2EE' : '#000000');
   }
   applyTheme();
   if(window.matchMedia){
@@ -654,7 +731,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = '2026-09-27 · v6';
+  const APP_BUILD = '2026-09-27 · v7';
 
   let state = {
     version: CURRENT_VERSION,
