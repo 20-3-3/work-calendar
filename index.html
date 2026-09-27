@@ -39,6 +39,7 @@
     --muted: #9A9D9F;
     --amber: #FF9500;
     --teal: #00E5FF;
+    --violet: #7B2FFF;
     --off: #6C6F72;
     --danger: #FF4D6D;
     --neon-white: #FFFFFF;
@@ -74,7 +75,7 @@
     margin: 0 auto;
     padding: 20px 14px 60px;
     padding-top: calc(20px + env(safe-area-inset-top));
-    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+    padding-bottom: calc(118px + env(safe-area-inset-bottom));
     padding-left: calc(14px + env(safe-area-inset-left));
     padding-right: calc(14px + env(safe-area-inset-right));
   }
@@ -345,7 +346,7 @@
   .week-item .wl{ color: var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px; }
   .week-item .wr{ font-family:'IBM Plex Mono', monospace; flex-shrink:0; }
 
-  /* ---- Settings ---- */
+  /* ---- Settings / panels ---- */
   .settings{
     margin-top: 22px;
     display:none;
@@ -420,7 +421,7 @@
     font-size: 13px;
   }
 
-  /* ---- Confirm dialog (own implementation — browser confirm()/alert() are blocked in this preview) ---- */
+  /* ---- Confirm dialog / bottom sheets ---- */
   .confirm-overlay{
     position: fixed;
     inset: 0;
@@ -438,6 +439,8 @@
     padding: 18px;
     max-width: 480px;
     width: 100%;
+    max-height: 82vh;
+    overflow-y: auto;
   }
   .confirm-msg{
     font-size: 14px;
@@ -457,6 +460,51 @@
   .confirm-btn.cancel{ background: var(--panel-alt); color: var(--text); }
   .confirm-btn.danger{ background: var(--danger); border-color: var(--danger); color:#1B1D1F; font-weight:600; }
   .confirm-btn.ok{ background: var(--amber); border-color: var(--amber); color:#1B1D1F; font-weight:600; }
+
+  /* ---- Bottom tab bar (iOS-style floating glass) ---- */
+  .tab-bar-wrap{
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    display:flex;
+    justify-content:center;
+    z-index: 400;
+    padding: 0 12px calc(10px + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+  .tab-bar{
+    pointer-events: auto;
+    display:flex;
+    width: 100%;
+    max-width: 456px;
+    background: rgba(36,39,42,0.72);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 26px;
+    padding: 6px;
+    gap: 4px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  }
+  :root.light-theme .tab-bar{
+    background: rgba(255,255,255,0.72);
+    border-color: rgba(0,0,0,0.06);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  }
+  .tab-item{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: 20px;
+    cursor:pointer;
+    color: var(--muted);
+  }
+  .tab-item svg{ width:22px; height:22px; }
+  .tab-item span{ font-size:10px; font-weight:500; }
+  .tab-item.active span{ font-weight:700; }
 </style>
 </head>
 <body>
@@ -495,8 +543,8 @@
   // Schema version of the persisted data. Bump this and add a step in migrateState()
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
-  const CURRENT_VERSION = 2;
-  const APP_BUILD = '2026-09-09';
+  const CURRENT_VERSION = 3;
+  const APP_BUILD = '2026-09-09 · v3';
 
   let state = {
     version: CURRENT_VERSION,
@@ -504,14 +552,14 @@
       { id:'w1', name:'Кофейня', color:'#FF9500', payType:'hourly', rate:300, currency:'₽' },
       { id:'w2', name:'Кинотеатр', color:'#00E5FF', payType:'hourly', rate:300, currency:'₽' }
     ],
-    shifts: {}
+    shifts: {},
+    payments: []
   };
 
+  let currentTab = 'calendar'; // 'calendar' | 'reports' | 'settings'
   let view = { year: new Date().getFullYear(), month: new Date().getMonth() };
   let selectedDate = null;
-  let settingsOpen = false;
   let patternOpen = false;
-  let analyticsOpen = false;
   let editorPickerOpen = false;
   let statsYear = new Date().getFullYear();
   let lastWeekDateKeys = [];
@@ -522,6 +570,7 @@
   let rangeEnd = null;
   let lastSavedAt = null;
   let storageBroken = false;
+
   function pad(n){ return n<10 ? '0'+n : ''+n; }
   function dateKey(y,m,d){ return y+'-'+pad(m+1)+'-'+pad(d); }
   function todayKey(){ const t=new Date(); return dateKey(t.getFullYear(),t.getMonth(),t.getDate()); }
@@ -536,6 +585,7 @@
     fillMode: 'month' // 'month' = до конца месяца начиная с startDate, 'week' = до конца календарной недели (по воскресенье)
   };
   let exportForm = yearBounds(statsYear);
+  let paymentFormState = null; // { periodFrom, periodTo, workplaceId, amount, note }
 
   function getWorkplace(id){ return state.workplaces.find(w=>w.id===id); }
 
@@ -560,6 +610,8 @@
     return computeRangeStats(year+'-01-01', year+'-12-31');
   }
 
+  // Часы теперь считаются независимо от типа оплаты — это нужно, чтобы понимать
+  // отработанные часы даже там, где платят фиксированно за смену.
   function computeRangeStats(from, to){
     let f = from, t = to;
     if(f && t && t < f){ const tmp=f; f=t; t=tmp; }
@@ -579,11 +631,8 @@
         if(wpStats[s.workplaceId]){
           wpStats[s.workplaceId].pay += pay;
           wpStats[s.workplaceId].days++;
-          const wp = getWorkplace(s.workplaceId);
-          if(wp && wp.payType==='hourly'){
-            wpStats[s.workplaceId].hours += (s.hours||0);
-            totalHours += (s.hours||0);
-          }
+          wpStats[s.workplaceId].hours += (s.hours||0);
+          totalHours += (s.hours||0);
         }
       }
     });
@@ -596,22 +645,33 @@
     return dd+' '+MONTHS[mm-1]+' '+yy;
   }
 
+  // ---- Выплаты (журнал фактически полученных денег) ----
+  function getPaymentsInRange(from, to){
+    return (state.payments||[]).filter(p=> p.periodFrom >= from && p.periodFrom <= to)
+      .sort((a,b)=> a.periodFrom < b.periodFrom ? -1 : 1);
+  }
+  function paymentsTotal(list){ return list.reduce((s,p)=> s+p.amount, 0); }
+
   // Свой выбор даты — всплывающий календарь на нашей же сетке, полностью на русском
   // и без нативных <select>/<input type="date">, которые на iOS: (а) показывают
   // системный язык вместо русского, (б) непредсказуемо себя ведут по ширине,
   // (в) заставляют системный пикер выскакивать заново из-за перерисовки DOM.
-  let datePickerState = null; // { target: 'patternStart'|'exportFrom'|'exportTo', year, month }
+  let datePickerState = null; // { target, year, month }
 
   function getDatePickerTargetValue(target){
     if(target==='patternStart') return patternForm.startDate;
     if(target==='exportFrom') return exportForm.from;
     if(target==='exportTo') return exportForm.to;
+    if(target==='paymentFrom') return paymentFormState ? paymentFormState.periodFrom : null;
+    if(target==='paymentTo') return paymentFormState ? paymentFormState.periodTo : null;
     return null;
   }
   function setDatePickerTargetValue(target, k){
     if(target==='patternStart') patternForm.startDate = k;
     else if(target==='exportFrom') exportForm.from = k;
     else if(target==='exportTo') exportForm.to = k;
+    else if(target==='paymentFrom'){ if(paymentFormState) paymentFormState.periodFrom = k; }
+    else if(target==='paymentTo'){ if(paymentFormState) paymentFormState.periodTo = k; }
   }
 
   let cloudOk = true;
@@ -622,9 +682,13 @@
   function migrateState(parsed){
     let v = parsed.version || 1;
     if(v < 2){
-      // v1 -> v2: multi-workplace support formalized. No structural change
-      // needed — normalizeState() already fills any missing workplace fields.
+      // v1 -> v2: multi-workplace support formalized. No structural change needed.
       v = 2;
+    }
+    if(v < 3){
+      // v2 -> v3: добавлен журнал выплат.
+      if(!Array.isArray(parsed.payments)) parsed.payments = [];
+      v = 3;
     }
     parsed.version = v;
     return parsed;
@@ -645,6 +709,7 @@
     }
     state.workplaces = list;
     state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
+    state.payments = Array.isArray(state.payments) ? state.payments : [];
   }
 
   function applyLoaded(raw){
@@ -652,6 +717,7 @@
     parsed = migrateState(parsed);
     if(parsed.workplaces) state.workplaces = parsed.workplaces;
     if(parsed.shifts) state.shifts = parsed.shifts;
+    state.payments = Array.isArray(parsed.payments) ? parsed.payments : [];
     state.version = parsed.version;
     normalizeState();
   }
@@ -722,7 +788,7 @@
       const pay = calcPay(s);
       return {
         'Дата': k,
-        'Часов': (wp && wp.payType==='hourly') ? (s.hours||0) : '',
+        'Часов': (s.hours!=null ? s.hours : ''),
         'Оплата': Math.round(pay*100)/100
       };
     });
@@ -762,8 +828,7 @@
     let focusInfo = null;
     // SELECT намеренно исключён: программный .focus() на пересозданном <select>
     // на iOS Safari заново открывает системный пикер сразу после того, как
-    // пользователь его закрыл выбором варианта — это и было причиной
-    // «всплывающее окно не закрывается».
+    // пользователь его закрыл выбором варианта.
     if(active && active.id && container.contains(active) && active.tagName !== 'SELECT'){
       focusInfo = { id: active.id, start: null, end: null };
       try{
@@ -813,78 +878,95 @@
     return html;
   }
 
+  function renderPaymentForm(){
+    if(!paymentFormState) return '';
+    const f = paymentFormState;
+    let html = '<div class="confirm-overlay" onclick="if(event.target===this) WC.cancelPaymentForm()">';
+    html += '  <div class="confirm-sheet">';
+    html += '    <div class="confirm-msg">Записать выплату</div>';
+    html += '    <div class="rate-row">';
+    html += '      <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentFrom\')">'+fmtDateShort(f.periodFrom)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '      <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentTo\')">'+fmtDateShort(f.periodTo)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '    </div>';
+    html += '    <div class="field"><label>Сумма</label><input type="number" min="0" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.setPaymentField(\'amount\', this.value)"></div>';
+    html += '    <div class="field"><label>Место работы (необязательно)</label><div class="choice-row">';
+    html += '      <div class="choice'+(f.workplaceId===''?' active':'')+'" style="color:var(--teal)'+(f.workplaceId===''?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPaymentField(\'workplaceId\',\'\')">Все</div>';
+    state.workplaces.forEach(w=>{
+      const active = f.workplaceId===w.id;
+      html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPaymentField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
+    });
+    html += '    </div></div>';
+    html += '    <div class="field"><label>Заметка (необязательно)</label><input type="text" id="paymentNote" value="'+esc(f.note)+'" oninput="WC.setPaymentField(\'note\', this.value)"></div>';
+    html += '    <div class="confirm-actions">';
+    html += '      <div class="confirm-btn cancel" onclick="WC.cancelPaymentForm()">Отмена</div>';
+    html += '      <div class="confirm-btn ok" onclick="WC.savePayment()">Сохранить</div>';
+    html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderTabBar(){
+    const tabs = [
+      { id:'calendar', label:'Календарь', icon: calendarTabIcon(), color:'#FF9500' },
+      { id:'reports', label:'Отчёты', icon: analyticsIcon(), color:'#00E5FF' },
+      { id:'settings', label:'Настройки', icon: gearIcon(), color:'#7B2FFF' }
+    ];
+    let html = '<div class="tab-bar-wrap"><div class="tab-bar">';
+    tabs.forEach(t=>{
+      const active = currentTab===t.id;
+      html += '<div class="tab-item'+(active?' active':'')+'" style="'+(active?('color:'+t.color+';background:'+t.color+'1A;box-shadow:0 0 16px '+t.color+'55;'):'')+'" onclick="WC.switchTab(\''+t.id+'\')">'+t.icon+'<span>'+t.label+'</span></div>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
   function render(){
     if(!loaded) return;
     const app = document.getElementById('app');
+
+    let html = '';
+    if(storageBroken){
+      html += '<div style="background:rgba(255,77,109,0.15);border:1px solid var(--danger);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.4;">⚠ Не удалось сохранить данные в этом браузере (возможно, включён приватный режим или закончилось место). Изменения могут потеряться — скачай резервную копию в настройках.</div>';
+    }
+
+    if(currentTab==='reports') html += renderReportsTab();
+    else if(currentTab==='settings') html += renderSettingsTab();
+    else html += renderCalendarTab();
+
+    if(confirmState){
+      html += '<div class="confirm-overlay" onclick="if(event.target===this) WC.confirmNo()">';
+      html += '  <div class="confirm-sheet">';
+      html += '    <div class="confirm-msg">'+esc(confirmState.message)+'</div>';
+      html += '    <div class="confirm-actions">';
+      if(confirmState.alertOnly){
+        html += '      <div class="confirm-btn ok" onclick="WC.confirmNo()">Понятно</div>';
+      } else {
+        html += '      <div class="confirm-btn cancel" onclick="WC.confirmNo()">Отмена</div>';
+        html += '      <div class="confirm-btn danger" onclick="WC.confirmYes()">'+esc(confirmState.confirmLabel||'Да')+'</div>';
+      }
+      html += '    </div>';
+      html += '  </div>';
+      html += '</div>';
+    }
+
+    html += renderPaymentForm();
+    html += renderDatePicker();
+    html += renderTabBar();
+
+    setHtmlPreservingFocus(app, html);
+  }
+
+  function renderCalendarTab(){
     const y = view.year, m = view.month;
     const nDays = daysInMonth(y,m);
     const lead = leadingBlanks(y,m);
     const tKey = todayKey();
 
-    // monthly aggregates
-    let monthPay=0, monthHours=0, workedDays=0, offDays=0;
-    const wpTotals = {};
-    state.workplaces.forEach(w=> wpTotals[w.id]={pay:0,hours:0,days:0});
-
-    for(let d=1; d<=nDays; d++){
-      const k = dateKey(y,m,d);
-      const s = state.shifts[k];
-      if(!s) continue;
-      if(s.dayOff){ offDays++; continue; }
-      if(s.workplaceId){
-        const pay = calcPay(s);
-        monthPay += pay;
-        workedDays++;
-        if(wpTotals[s.workplaceId]){
-          wpTotals[s.workplaceId].pay += pay;
-          wpTotals[s.workplaceId].days += 1;
-          if(getWorkplace(s.workplaceId).payType==='hourly'){
-            wpTotals[s.workplaceId].hours += (s.hours||0);
-            monthHours += (s.hours||0);
-          }
-        }
-      }
-    }
-
-    // weekly breakdown, grouped by calendar rows
-    const weeks = [];
-    lastWeekDateKeys = [];
-    let current = { pay:0, hours:0, shifts:0 };
-    let currentKeys = [];
-    let cellIndex = lead;
-    for(let d=1; d<=nDays; d++){
-      const k = dateKey(y,m,d);
-      const s = state.shifts[k];
-      currentKeys.push(k);
-      if(s && s.workplaceId){
-        const pay = calcPay(s);
-        current.pay += pay;
-        current.shifts += 1;
-        if(getWorkplace(s.workplaceId).payType==='hourly') current.hours += (s.hours||0);
-      }
-      cellIndex++;
-      if(cellIndex % 7 === 0 || d === nDays){
-        weeks.push(current);
-        lastWeekDateKeys.push(currentKeys);
-        current = { pay:0, hours:0, shifts:0 };
-        currentKeys = [];
-      }
-    }
-
     let html = '';
-
-    if(storageBroken){
-      html += '<div style="background:rgba(255,77,109,0.15);border:1px solid var(--danger);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.4;">⚠ Не удалось сохранить данные в этом браузере (возможно, включён приватный режим или закончилось место). Изменения могут потеряться — скачай резервную копию в настройках.</div>';
-    }
-
-    // header
     html += '<div class="top">';
     html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:'+seasonColor(m)+';text-shadow:0 0 14px '+seasonColor(m)+'77;">'+MONTHS[m]+' '+y+'</div></div>';
-    html += '  <div style="display:flex;gap:6px;flex-shrink:0;">';
-    html += '    <div class="gear-btn" onclick="WC.toggleAnalytics()" title="Статистика и экспорт">'+analyticsIcon()+'</div>';
-    html += '    <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
-    html += '    <div class="gear-btn" onclick="WC.toggleSettings()">'+gearIcon()+'</div>';
-    html += '  </div>';
+    html += '  <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
     html += '</div>';
 
     html += '<div class="nav-row">';
@@ -897,15 +979,10 @@
     html += '  <div class="today-link" style="'+(rangeMode?'color:var(--amber);border-color:var(--amber);':'')+'" onclick="WC.toggleRangeMode()">'+(rangeMode?'Выйти из режима периода':'Выбрать период на календаре')+'</div>';
     html += '</div>';
 
-    // settings, pattern & analytics panels (right below header so they're visible immediately when opened)
-    html += renderAnalyticsPanel();
     html += renderPatternPanel();
-    html += renderSettings();
 
-    // weekday labels
     html += '<div class="weekdays">' + WEEKDAYS.map(w=>'<div>'+w+'</div>').join('') + '</div>';
 
-    // grid
     html += '<div class="grid">';
     for(let i=0;i<lead;i++) html += '<div class="day blank"></div>';
     for(let d=1; d<=nDays; d++){
@@ -942,23 +1019,44 @@
     }
     html += '</div>';
 
-    // editor
     html += renderEditor(selectedDate);
     html += renderRangePanel();
 
+    return html;
+  }
+
+  function renderReportsTab(){
+    const y = view.year, m = view.month;
+    const nDays = daysInMonth(y,m);
+    const lead = leadingBlanks(y,m);
+
+    let html = '';
+    html += '<div class="top">';
+    html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:var(--teal);text-shadow:0 0 14px #00E5FF77;">Отчёты</div></div>';
+    html += '</div>';
+
+    html += '<div class="nav-row">';
+    html += '  <div class="nav-btn" onclick="WC.prevMonth()">‹</div>';
+    html += '  <div class="today-link" style="cursor:default;">'+MONTHS[m]+' '+y+'</div>';
+    html += '  <div class="nav-btn" onclick="WC.nextMonth()">›</div>';
+    html += '</div>';
+
+    const monthFrom = dateKey(y,m,1), monthTo = dateKey(y,m,nDays);
+    const ms = computeRangeStats(monthFrom, monthTo);
+
     // monthly summary
-    html += '<div class="section">';
+    html += '<div class="section" style="margin-top:0;">';
     html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Итого за месяц</span><span class="clear-btn" onclick="WC.clearMonth()">Очистить</span></div>';
     html += '  <div class="summary-card">';
-    html += '    <div class="total-pay mono">'+fmtMoney(monthPay, state.workplaces[0]?.currency)+'</div>';
-    html += '    <div class="total-sub">'+workedDays+' смен · '+monthHours+' ч · '+offDays+' вых.</div>';
+    html += '    <div class="total-pay mono">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</div>';
+    html += '    <div class="total-sub">'+ms.totalShifts+' смен · '+ms.totalHours+' ч · '+ms.totalOff+' вых.</div>';
     state.workplaces.forEach(w=>{
-      const t = wpTotals[w.id];
-      const pct = monthPay>0 ? Math.round((t.pay/monthPay)*100) : 0;
+      const t = ms.wpStats[w.id] || {pay:0,hours:0,days:0};
+      const pct = ms.totalPay>0 ? Math.round((t.pay/ms.totalPay)*100) : 0;
       html += '    <div class="wp-row">';
       html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
       html += '      <div class="wp-info">';
-      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
+      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
       html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
       html += '      </div>';
       html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
@@ -967,7 +1065,30 @@
     html += '  </div>';
     html += '</div>';
 
-    // weekly breakdown
+    // weekly breakdown (grouped by calendar rows for this month)
+    const weeks = [];
+    lastWeekDateKeys = [];
+    let current = { pay:0, hours:0, shifts:0 };
+    let currentKeys = [];
+    let cellIndex = lead;
+    for(let d=1; d<=nDays; d++){
+      const k = dateKey(y,m,d);
+      const s = state.shifts[k];
+      currentKeys.push(k);
+      if(s && s.workplaceId){
+        const pay = calcPay(s);
+        current.pay += pay;
+        current.shifts += 1;
+        current.hours += (s.hours||0);
+      }
+      cellIndex++;
+      if(cellIndex % 7 === 0 || d === nDays){
+        weeks.push(current);
+        lastWeekDateKeys.push(currentKeys);
+        current = { pay:0, hours:0, shifts:0 };
+        currentKeys = [];
+      }
+    }
     html += '<div class="section">';
     html += '  <div class="section-title">По неделям</div>';
     html += '  <div class="week-list">';
@@ -977,25 +1098,86 @@
     html += '  </div>';
     html += '</div>';
 
-    if(confirmState){
-      html += '<div class="confirm-overlay" onclick="if(event.target===this) WC.confirmNo()">';
-      html += '  <div class="confirm-sheet">';
-      html += '    <div class="confirm-msg">'+esc(confirmState.message)+'</div>';
-      html += '    <div class="confirm-actions">';
-      if(confirmState.alertOnly){
-        html += '      <div class="confirm-btn ok" onclick="WC.confirmNo()">Понятно</div>';
-      } else {
-        html += '      <div class="confirm-btn cancel" onclick="WC.confirmNo()">Отмена</div>';
-        html += '      <div class="confirm-btn danger" onclick="WC.confirmYes()">'+esc(confirmState.confirmLabel||'Да')+'</div>';
-      }
-      html += '    </div>';
+    // payments for the month
+    const monthPayments = getPaymentsInRange(monthFrom, monthTo);
+    const paidMonth = paymentsTotal(monthPayments);
+    const diffMonth = ms.totalPay - paidMonth;
+    html += '<div class="section">';
+    html += '  <div class="section-title">Выплаты за месяц</div>';
+    html += '  <div class="summary-card">';
+    html += '    <div class="total-sub">Начислено: <span class="mono" style="color:var(--text);">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</span></div>';
+    html += '    <div class="total-sub">Выплачено: <span class="mono" style="color:var(--teal);">'+fmtMoney(paidMonth, state.workplaces[0]?.currency)+'</span></div>';
+    html += '    <div class="total-sub">'+(diffMonth>=0?'Осталось получить: ':'Переплачено: ')+'<span class="mono" style="color:'+(diffMonth>=0?'var(--amber)':'var(--danger)')+';">'+fmtMoney(Math.abs(diffMonth), state.workplaces[0]?.currency)+'</span></div>';
+    html += '  </div>';
+    if(monthPayments.length){
+      html += '  <div class="week-list" style="margin-top:10px;">';
+      monthPayments.forEach(p=>{
+        const wp = p.workplaceId ? getWorkplace(p.workplaceId) : null;
+        const periodLabel = p.periodFrom===p.periodTo ? fmtDateShort(p.periodFrom) : (fmtDateShort(p.periodFrom)+' – '+fmtDateShort(p.periodTo));
+        html += '    <div class="week-item"><span class="wl">'+(wp?esc(wp.name)+' · ':'')+periodLabel+(p.note?(' · '+esc(p.note)):'')+'</span><div style="display:flex;align-items:center;gap:10px;"><span class="wr">'+fmtMoney(p.amount, state.workplaces[0]?.currency)+'</span><span class="clear-btn" onclick="WC.deletePayment(\''+p.id+'\')">✕</span></div></div>';
+      });
       html += '  </div>';
-      html += '</div>';
     }
+    html += '  <div class="choice" style="text-align:center;color:var(--teal);box-shadow:none;margin-top:10px;" onclick="WC.openPaymentForm(\''+monthFrom+'\',\''+monthTo+'\')">+ Записать выплату за месяц</div>';
+    html += '</div>';
 
-    html += renderDatePicker();
+    // year stats
+    html += '<div class="section">';
+    html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">';
+    html += '    <span>Статистика за год</span>';
+    html += '    <span style="display:flex;align-items:center;gap:8px;">';
+    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.prevStatsYear()">‹</span>';
+    html += '      <span class="mono" style="font-size:13px;">'+statsYear+'</span>';
+    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.nextStatsYear()">›</span>';
+    html += '    </span>';
+    html += '  </div>';
+    const ys = computeYearStats(statsYear);
+    html += '  <div class="summary-card">';
+    html += '    <div class="total-pay mono">'+fmtMoney(ys.totalPay, state.workplaces[0]?.currency)+'</div>';
+    html += '    <div class="total-sub">'+ys.totalShifts+' смен · '+ys.totalHours+' ч · '+ys.totalOff+' вых. за год</div>';
+    state.workplaces.forEach(w=>{
+      const t = ys.wpStats[w.id] || {pay:0,hours:0,days:0};
+      const pct = ys.totalPay>0 ? Math.round((t.pay/ys.totalPay)*100) : 0;
+      html += '    <div class="wp-row">';
+      html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
+      html += '      <div class="wp-info">';
+      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
+      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
+      html += '      </div>';
+      html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
+      html += '    </div>';
+    });
+    const yearFrom = statsYear+'-01-01', yearTo = statsYear+'-12-31';
+    const yearPayments = getPaymentsInRange(yearFrom, yearTo);
+    const paidYear = paymentsTotal(yearPayments);
+    const diffYear = ys.totalPay - paidYear;
+    html += '    <div class="total-sub" style="margin-top:12px;">Выплачено за год: <span class="mono" style="color:var(--teal);">'+fmtMoney(paidYear, state.workplaces[0]?.currency)+'</span> · '+(diffYear>=0?'осталось: ':'переплата: ')+'<span class="mono" style="color:'+(diffYear>=0?'var(--amber)':'var(--danger)')+';">'+fmtMoney(Math.abs(diffYear), state.workplaces[0]?.currency)+'</span></div>';
+    html += '  </div>';
+    html += '  <div class="choice" style="text-align:center;color:var(--teal);box-shadow:none;margin-top:10px;" onclick="WC.openPaymentForm(\''+yearFrom+'\',\''+yearTo+'\')">+ Записать выплату за год</div>';
+    html += '</div>';
 
-    setHtmlPreservingFocus(app, html);
+    // export
+    html += '<div class="section">';
+    html += '  <div class="section-title">Экспорт в Excel</div>';
+    html += '  <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportFrom\')">'+fmtDateShort(exportForm.from)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '  <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportTo\')">'+fmtDateShort(exportForm.to)+'<span style="color:var(--muted);">▾</span></div></div>';
+    html += '  <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">';
+    state.workplaces.forEach(w=>{
+      html += '    <div class="week-item" style="cursor:pointer;" onclick="WC.exportWorkplace(\''+w.id+'\')"><span class="wl">Скачать: '+esc(w.name)+'</span><span style="color:'+w.color+'">⭳ .xlsx</span></div>';
+    });
+    html += '    <div class="week-item" style="cursor:pointer;border-color:var(--amber);" onclick="WC.exportAll()"><span class="wl" style="color:var(--text);">Скачать всё (все места работы)</span><span style="color:var(--amber)">⭳ .xlsx</span></div>';
+    html += '  </div>';
+    html += '</div>';
+
+    return html;
+  }
+
+  function renderSettingsTab(){
+    let html = '<div class="top">';
+    html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:var(--violet);text-shadow:0 0 14px #7B2FFF77;">Настройки</div></div>';
+    html += '</div>';
+    html += renderSettings();
+    return html;
   }
 
   function renderEditor(k){
@@ -1031,11 +1213,14 @@
 
     if(s.workplaceId){
       const wp = getWorkplace(s.workplaceId);
-      if(wp && wp.payType==='hourly'){
-        html += '  <div class="hours-row"><label>Часов</label><input type="number" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
-      }
+      const isDaily = wp && wp.payType==='daily';
+      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="number" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
       const pay = calcPay(s);
-      html += '  <div class="preview-pay">Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span></div>';
+      html += '  <div class="preview-pay">Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
+      if(isDaily && s.hours>0){
+        html += ' <span style="color:var(--muted);">· ≈ '+fmtMoney(pay/s.hours, wp.currency)+'/ч</span>';
+      }
+      html += '</div>';
     }
 
     html += '  <div class="editor-actions">';
@@ -1050,11 +1235,12 @@
   function renderRangePanel(){
     if(!rangeMode) return '';
     let html = '<div class="editor open" style="border-left-color:var(--amber);">';
+    let rf = null, rt = null;
     if(!rangeStart){
       html += '  <div class="edate">Отметьте на календаре день начала периода</div>';
     } else {
-      const rf = (rangeEnd && rangeEnd<rangeStart) ? rangeEnd : rangeStart;
-      const rt = rangeEnd ? ((rangeEnd<rangeStart) ? rangeStart : rangeEnd) : rangeStart;
+      rf = (rangeEnd && rangeEnd<rangeStart) ? rangeEnd : rangeStart;
+      rt = rangeEnd ? ((rangeEnd<rangeStart) ? rangeStart : rangeEnd) : rangeStart;
       const stats = computeRangeStats(rf, rt);
       html += '  <div class="edate">Период: '+fmtDateShort(rf)+' — '+fmtDateShort(rt)+'</div>';
       html += '  <div class="summary-card" style="padding:14px;">';
@@ -1066,7 +1252,7 @@
         html += '    <div class="wp-row">';
         html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
         html += '      <div class="wp-info">';
-        html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
+        html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
         html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
         html += '      </div>';
         html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
@@ -1075,8 +1261,12 @@
       html += '  </div>';
     }
     html += '  <div class="editor-actions" style="justify-content:space-between;margin-top:12px;">';
-    html += '    <span></span>';
-    if(rangeStart){ html += '    <div class="clear-btn" style="color:var(--amber);" onclick="WC.resetRange()">Выбрать заново</div>'; }
+    if(rf){
+      html += '    <div class="clear-btn" style="color:var(--teal);" onclick="WC.openPaymentForm(\''+rf+'\',\''+rt+'\')">Записать выплату</div>';
+      html += '    <div class="clear-btn" style="color:var(--amber);" onclick="WC.resetRange()">Выбрать заново</div>';
+    } else {
+      html += '    <span></span>';
+    }
     html += '  </div>';
     html += '</div>';
     return html;
@@ -1113,9 +1303,8 @@
     html += '  </div></div>';
 
     const wp = getWorkplace(patternForm.workplaceId);
-    if(wp && wp.payType==='hourly'){
-      html += '  <div class="field"><label>Часов за смену</label><input type="number" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
-    }
+    const isDaily = wp && wp.payType==='daily';
+    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="number" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
     html += '    <div class="choice active" style="flex:none;color:var(--amber);background:#FF950022;box-shadow:0 0 10px var(--amber);cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
@@ -1124,57 +1313,14 @@
     return html;
   }
 
-  function renderAnalyticsPanel(){
-    let html = '<div class="settings'+(analyticsOpen?' open':'')+'">';
-    html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">';
-    html += '    <span>Статистика за год</span>';
-    html += '    <span style="display:flex;align-items:center;gap:8px;">';
-    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.prevStatsYear()">‹</span>';
-    html += '      <span class="mono" style="font-size:13px;">'+statsYear+'</span>';
-    html += '      <span class="nav-btn" style="width:26px;height:26px;font-size:13px;" onclick="WC.nextStatsYear()">›</span>';
-    html += '    </span>';
-    html += '  </div>';
-
-    const ys = computeYearStats(statsYear);
-    html += '  <div class="summary-card" style="margin-bottom:16px;">';
-    html += '    <div class="total-pay mono">'+fmtMoney(ys.totalPay, state.workplaces[0]?.currency)+'</div>';
-    html += '    <div class="total-sub">'+ys.totalShifts+' смен · '+ys.totalHours+' ч · '+ys.totalOff+' вых. за год</div>';
-    state.workplaces.forEach(w=>{
-      const t = ys.wpStats[w.id] || {pay:0,hours:0,days:0};
-      const pct = ys.totalPay>0 ? Math.round((t.pay/ys.totalPay)*100) : 0;
-      html += '    <div class="wp-row">';
-      html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
-      html += '      <div class="wp-info">';
-      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен'+(w.payType==='hourly' ? ' · '+t.hours+' ч' : '')+'</span></div>';
-      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
-      html += '      </div>';
-      html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
-      html += '    </div>';
-    });
-    html += '  </div>';
-
-    html += '  <div class="section-title">Экспорт в Excel</div>';
-    html += '  <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportFrom\')">'+fmtDateShort(exportForm.from)+'<span style="color:var(--muted);">▾</span></div></div>';
-    html += '  <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'exportTo\')">'+fmtDateShort(exportForm.to)+'<span style="color:var(--muted);">▾</span></div></div>';
-    html += '  <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">';
-    state.workplaces.forEach(w=>{
-      html += '    <div class="week-item" style="cursor:pointer;" onclick="WC.exportWorkplace(\''+w.id+'\')"><span class="wl">Скачать: '+esc(w.name)+'</span><span style="color:'+w.color+'">⭳ .xlsx</span></div>';
-    });
-    html += '    <div class="week-item" style="cursor:pointer;border-color:var(--amber);" onclick="WC.exportAll()"><span class="wl" style="color:var(--text);">Скачать всё (все места работы)</span><span style="color:var(--amber)">⭳ .xlsx</span></div>';
-    html += '  </div>';
-
-    html += '</div>';
-    return html;
-  }
-
   function renderSettings(){
-    let html = '<div class="settings'+(settingsOpen?' open':'')+'">';
+    let html = '<div class="settings open">';
 
     html += '  <div class="section-title">Тема</div>';
     html += '  <div class="choice-row" style="margin-bottom:18px;">';
     [['auto','Авто (как в системе)'],['light','Светлая'],['dark','Тёмная']].forEach(p=>{
       const active = themePref===p[0];
-      html += '<div class="choice'+(active?' active':'')+'" style="color:var(--amber)'+(active?';background:#FF950022;box-shadow:0 0 10px var(--amber)':'')+'" onclick="WC.setThemePref(\''+p[0]+'\')">'+p[1]+'</div>';
+      html += '<div class="choice'+(active?' active':'')+'" style="color:var(--violet)'+(active?';background:#7B2FFF22;box-shadow:0 0 10px var(--violet)':'')+'" onclick="WC.setThemePref(\''+p[0]+'\')">'+p[1]+'</div>';
     });
     html += '  </div>';
 
@@ -1240,27 +1386,23 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
   }
 
+  function calendarTabIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>';
+  }
+
   window.WC = {
     prevMonth(){ view.month--; if(view.month<0){view.month=11; view.year--;} selectedDate=null; render(); },
     nextMonth(){ view.month++; if(view.month>11){view.month=0; view.year++;} selectedDate=null; render(); },
     goToday(){ const t=new Date(); view.year=t.getFullYear(); view.month=t.getMonth(); selectedDate=todayKey(); render(); },
-    toggleSettings(){
-      settingsOpen = !settingsOpen;
-      if(settingsOpen){ patternOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null; }
+    switchTab(tab){
+      currentTab = tab;
+      if(tab !== 'calendar'){ rangeMode=false; rangeStart=null; rangeEnd=null; patternOpen=false; }
       render();
     },
     setThemePref(pref){
       themePref = pref;
       try{ localStorage.setItem('wc-theme', pref); }catch(e){}
       applyTheme();
-      render();
-    },
-    toggleAnalytics(){
-      if(!analyticsOpen){
-        exportForm = yearBounds(statsYear);
-        settingsOpen=false; patternOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null;
-      }
-      analyticsOpen = !analyticsOpen;
       render();
     },
     prevStatsYear(){ statsYear--; render(); },
@@ -1287,6 +1429,34 @@
       render();
     },
     closeDatePicker(){ datePickerState = null; render(); },
+    openPaymentForm(from, to){
+      paymentFormState = { periodFrom: from, periodTo: to, workplaceId:'', amount:'', note:'' };
+      render();
+    },
+    cancelPaymentForm(){ paymentFormState = null; render(); },
+    setPaymentField(key, value){ if(!paymentFormState) return; paymentFormState[key] = value; render(); },
+    savePayment(){
+      if(!paymentFormState) return;
+      const amt = parseFloat(paymentFormState.amount);
+      if(!amt || amt<=0){ showAlert('Укажи сумму больше нуля.'); return; }
+      if(!Array.isArray(state.payments)) state.payments = [];
+      state.payments.push({
+        id: 'p'+Date.now(),
+        periodFrom: paymentFormState.periodFrom,
+        periodTo: paymentFormState.periodTo,
+        workplaceId: paymentFormState.workplaceId || '',
+        amount: amt,
+        note: paymentFormState.note || ''
+      });
+      paymentFormState = null;
+      saveState(); render();
+    },
+    deletePayment(id){
+      askConfirm('Удалить эту запись о выплате?', function(){
+        state.payments = (state.payments||[]).filter(p=>p.id!==id);
+        saveState(); render();
+      });
+    },
     exportWorkplace(wpId){
       const wp = getWorkplace(wpId);
       const rows = buildWorkplaceRows(wpId, exportForm.from, exportForm.to);
@@ -1303,7 +1473,7 @@
         return {
           'Дата': k,
           'Место': wp ? wp.name : '—',
-          'Часов': (wp && wp.payType==='hourly') ? (s.hours||0) : '',
+          'Часов': (s.hours!=null ? s.hours : ''),
           'Оплата': Math.round(pay*100)/100
         };
       });
@@ -1314,7 +1484,7 @@
     togglePattern(){
       if(!patternOpen){
         patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
-        settingsOpen=false; analyticsOpen=false; rangeMode=false; rangeStart=null; rangeEnd=null;
+        rangeMode=false; rangeStart=null; rangeEnd=null;
       }
       patternOpen = !patternOpen;
       render();
@@ -1345,13 +1515,13 @@
       } else {
         endD = new Date(sy, sm-1, daysInMonth(sy, sm-1));
       }
-      const wp = getWorkplace(patternForm.workplaceId);
+      const hoursVal = patternForm.hours || 0;
       let i = 0;
       let cur = new Date(startD);
       while(cur <= endD){
         const k = dateKey(cur.getFullYear(), cur.getMonth(), cur.getDate());
         if(i % cycle < wd){
-          state.shifts[k] = { workplaceId: patternForm.workplaceId, hours: (wp && wp.payType==='hourly') ? (patternForm.hours||0) : undefined, dayOff:false };
+          state.shifts[k] = { workplaceId: patternForm.workplaceId, hours: hoursVal, dayOff:false };
         } else {
           state.shifts[k] = { dayOff:true };
         }
@@ -1379,7 +1549,7 @@
     toggleRangeMode(){
       rangeMode = !rangeMode;
       rangeStart = null; rangeEnd = null; selectedDate = null;
-      if(rangeMode){ settingsOpen=false; patternOpen=false; analyticsOpen=false; }
+      if(rangeMode){ patternOpen=false; }
       render();
     },
     resetRange(){ rangeStart = null; rangeEnd = null; render(); },
@@ -1470,10 +1640,11 @@
           showAlert('Файл не похож на резервную копию этого приложения.');
           return;
         }
-        askConfirm('Восстановить данные из файла? Текущие смены и места работы будут заменены.', function(){
+        askConfirm('Восстановить данные из файла? Текущие смены, места работы и выплаты будут заменены.', function(){
           const migrated = migrateState(parsed);
           if(migrated.workplaces) state.workplaces = migrated.workplaces;
           if(migrated.shifts) state.shifts = migrated.shifts;
+          state.payments = Array.isArray(migrated.payments) ? migrated.payments : [];
           state.version = migrated.version;
           normalizeState();
           saveState(); render();
@@ -1508,14 +1679,14 @@
     }
   };
 
-  // Закрытие открытых панелей (настройки/шаблон/аналитика) по тапу вне их области —
+  // Закрытие открытой панели шаблона по тапу вне её области —
   // capture-фаза, чтобы сработать раньше собственных обработчиков кликнутого элемента.
   document.addEventListener('click', function(e){
-    if(!(settingsOpen || patternOpen || analyticsOpen)) return;
+    if(!patternOpen) return;
     if(e.target.closest('.settings')) return;
     if(e.target.closest('.gear-btn')) return;
     if(e.target.closest('.confirm-overlay')) return;
-    settingsOpen = false; patternOpen = false; analyticsOpen = false;
+    patternOpen = false;
     render();
   }, true);
 
