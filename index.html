@@ -62,6 +62,11 @@
 
   *{ box-sizing: border-box; }
   html,body{ margin:0; padding:0; }
+  /* iOS (веб-приложение на экране «Домой» с прозрачной строкой состояния): если страница короче
+     экрана, закреплённая снизу панель поднимается на высоту строки состояния. Поэтому документ
+     всегда заполняет экран целиком — тогда панель стоит на одной высоте во всех вкладках. */
+  html{ min-height: calc(100% + env(safe-area-inset-top)); background: var(--bg); }
+  body{ min-height: 100%; }
   body{
     background: var(--bg);
     color: var(--text);
@@ -649,7 +654,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = '2026-09-27 · v5';
+  const APP_BUILD = '2026-09-27 · v6';
 
   let state = {
     version: CURRENT_VERSION,
