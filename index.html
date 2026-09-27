@@ -75,7 +75,7 @@
     margin: 0 auto;
     padding: 20px 14px 60px;
     padding-top: calc(20px + env(safe-area-inset-top));
-    padding-bottom: calc(118px + env(safe-area-inset-bottom));
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
     padding-left: calc(14px + env(safe-area-inset-left));
     padding-right: calc(14px + env(safe-area-inset-right));
   }
@@ -461,50 +461,156 @@
   .confirm-btn.danger{ background: var(--danger); border-color: var(--danger); color:#1B1D1F; font-weight:600; }
   .confirm-btn.ok{ background: var(--amber); border-color: var(--amber); color:#1B1D1F; font-weight:600; }
 
-  /* ---- Bottom tab bar (iOS-style floating glass) ---- */
+  /* ---- Bottom tab bar: Liquid Glass floating capsule ---- */
+  /* Мягкое затухание контента у нижнего края — как «scroll edge effect» в iOS */
+  .bottom-fade{
+    position: fixed;
+    left:0; right:0; bottom:0;
+    height: calc(70px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, color-mix(in srgb, var(--bg) 70%, transparent) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 399;
+  }
+  /* Капсула сидит прямо над полоской «Домой», как в приложениях Apple */
   .tab-bar-wrap{
     position: fixed;
-    left: 0; right: 0; bottom: 0;
+    left: 0; right: 0;
+    bottom: max(10px, calc(env(safe-area-inset-bottom) - 12px));
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
     display:flex;
     justify-content:center;
     z-index: 400;
-    padding: 0 12px calc(10px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
   .tab-bar{
+    --idx: 0;
+    --accent: #FF9500;
+    --accent-bg: rgba(255,149,0,0.20);
+    --accent-glow: rgba(255,149,0,0.45);
+    position: relative;
+    isolation: isolate;
     pointer-events: auto;
-    display:flex;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     width: 100%;
-    max-width: 456px;
-    background: rgba(36,39,42,0.72);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 26px;
+    max-width: 400px;
+    margin: 0;
     padding: 6px;
-    gap: 4px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    border-radius: 34px;
+    background: rgba(28,30,33,0.42);
+    -webkit-backdrop-filter: blur(18px) saturate(185%);
+    backdrop-filter: blur(18px) saturate(185%);
+    box-shadow:
+      0 12px 32px rgba(0,0,0,0.38),
+      0 2px 6px rgba(0,0,0,0.22),
+      inset 0 0 0 0.5px rgba(255,255,255,0.10);
+  }
+  /* Бликующий «стеклянный» кант по краю */
+  .tab-bar::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    z-index:0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(145deg,
+      rgba(255,255,255,0.55),
+      rgba(255,255,255,0.08) 35%,
+      rgba(255,255,255,0.02) 60%,
+      rgba(255,255,255,0.28));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events:none;
+  }
+  /* Верхний глянец */
+  .tab-bar::after{
+    content:'';
+    position:absolute;
+    inset:1px;
+    z-index:0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0) 45%);
+    pointer-events:none;
   }
   :root.light-theme .tab-bar{
-    background: rgba(255,255,255,0.72);
-    border-color: rgba(0,0,0,0.06);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.55);
+    box-shadow:
+      0 12px 32px rgba(0,0,0,0.14),
+      0 2px 6px rgba(0,0,0,0.08),
+      inset 0 0 0 0.5px rgba(0,0,0,0.06);
+  }
+  :root.light-theme .tab-bar::before{
+    background: linear-gradient(145deg,
+      rgba(255,255,255,0.95),
+      rgba(255,255,255,0.30) 35%,
+      rgba(255,255,255,0.10) 60%,
+      rgba(255,255,255,0.70));
+  }
+  :root.light-theme .tab-bar::after{
+    background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 50%);
+  }
+  /* «Линза» под активной вкладкой — переезжает между кнопками с пружинкой и сохраняет неоновую подсветку */
+  .tab-lens{
+    position:absolute;
+    z-index:1;
+    top:6px; bottom:6px; left:6px;
+    width: calc((100% - 12px) / 3);
+    border-radius: 28px;
+    background: var(--accent-bg);
+    box-shadow:
+      0 0 18px var(--accent-glow),
+      inset 0 1px 0 rgba(255,255,255,0.35),
+      inset 0 -1px 0 rgba(255,255,255,0.06),
+      inset 0 0 0 0.5px rgba(255,255,255,0.22);
+    transform: translateX(calc(100% * var(--idx))) scale(var(--press, 1));
+    transition:
+      transform .5s cubic-bezier(.3,1.35,.5,1),
+      background .3s ease,
+      box-shadow .3s ease;
+  }
+  .tab-bar:active .tab-lens{ --press: 1.06; }
+  :root.light-theme .tab-lens{
+    box-shadow:
+      0 0 16px var(--accent-glow),
+      inset 0 1px 0 rgba(255,255,255,0.9),
+      inset 0 0 0 0.5px rgba(0,0,0,0.06);
   }
   .tab-item{
-    flex:1;
+    position:relative;
+    z-index:2;
+    -webkit-appearance:none;
+    appearance:none;
+    background:none;
+    border:0;
+    margin:0;
+    font: inherit;
+    color: var(--text);
     display:flex;
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap: 3px;
-    padding: 8px 4px;
-    border-radius: 20px;
+    gap: 2px;
+    height: 52px;
+    padding: 0 4px;
+    border-radius: 28px;
     cursor:pointer;
-    color: var(--muted);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: color .25s ease, transform .2s ease;
   }
-  .tab-item svg{ width:22px; height:22px; }
-  .tab-item span{ font-size:10px; font-weight:500; }
-  .tab-item.active span{ font-weight:700; }
+  .tab-item:active{ transform: scale(0.94); }
+  .tab-item:focus-visible{ outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tab-item svg{ width:24px; height:24px; transition: filter .3s ease; }
+  .tab-item span{ font-size:10px; font-weight:600; letter-spacing:0.01em; }
+  .tab-item.active{ color: var(--accent-ink, var(--accent)); }
+  :root.light-theme .tab-item.active{ color: var(--accent-ink-light, var(--accent)); }
+  .tab-item.active svg{ filter: drop-shadow(0 0 6px var(--accent-glow)); }
+  @media (prefers-reduced-motion: reduce){
+    .tab-lens, .tab-item{ transition:none; }
+  }
 </style>
 </head>
 <body>
@@ -544,7 +650,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = '2026-09-09 · v3';
+  const APP_BUILD = '2026-09-27 · v4';
 
   let state = {
     version: CURRENT_VERSION,
@@ -906,19 +1012,60 @@
     return html;
   }
 
+  // Вкладки нижней панели. У каждой свой неоновый акцент — им подсвечивается «линза» под активной кнопкой.
+  // color — неон для подсветки; inkDark/inkLight — более читаемый оттенок для подписи в тёмной/светлой теме.
+  const TAB_DEFS = [
+    { id:'calendar', label:'Календарь', icon: calendarTabIcon, color:'#FF9500', inkDark:'#FF9F1A', inkLight:'#B85A00' },
+    { id:'reports',  label:'Отчёты',    icon: analyticsIcon,   color:'#00E5FF', inkDark:'#33EBFF', inkLight:'#007C94' },
+    { id:'settings', label:'Настройки', icon: gearIcon,        color:'#7B2FFF', inkDark:'#AD85FF', inkLight:'#5B16E0' }
+  ];
+  let lastTabIdx = 0; // где «линза» стояла при прошлой отрисовке — от неё она и поедет
+
+  function hexA(hex, a){
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';
+  }
+  function tabIndex(){ return Math.max(0, TAB_DEFS.findIndex(t=>t.id===currentTab)); }
+  function tabAccentVars(t){
+    return {
+      '--accent': t.color,
+      '--accent-bg': hexA(t.color, 0.20),
+      '--accent-glow': hexA(t.color, 0.45),
+      '--accent-ink': t.inkDark,
+      '--accent-ink-light': t.inkLight
+    };
+  }
+  function setTabAccent(el, t){
+    const v = tabAccentVars(t);
+    Object.keys(v).forEach(k=> el.style.setProperty(k, v[k]));
+  }
+
   function renderTabBar(){
-    const tabs = [
-      { id:'calendar', label:'Календарь', icon: calendarTabIcon(), color:'#FF9500' },
-      { id:'reports', label:'Отчёты', icon: analyticsIcon(), color:'#00E5FF' },
-      { id:'settings', label:'Настройки', icon: gearIcon(), color:'#7B2FFF' }
-    ];
-    let html = '<div class="tab-bar-wrap"><div class="tab-bar">';
-    tabs.forEach(t=>{
-      const active = currentTab===t.id;
-      html += '<div class="tab-item'+(active?' active':'')+'" style="'+(active?('color:'+t.color+';background:'+t.color+'1A;box-shadow:0 0 16px '+t.color+'55;'):'')+'" onclick="WC.switchTab(\''+t.id+'\')">'+t.icon+'<span>'+t.label+'</span></div>';
+    const curIdx = tabIndex();
+    const from = TAB_DEFS[lastTabIdx] || TAB_DEFS[curIdx];
+    const v = tabAccentVars(from);
+    const styleVars = '--idx:'+lastTabIdx+';'+Object.keys(v).map(k=> k+':'+v[k]).join(';')+';';
+    let html = '<div class="bottom-fade"></div>';
+    html += '<div class="tab-bar-wrap"><nav class="tab-bar" id="tabBar" role="tablist" style="'+styleVars+'">';
+    html += '<div class="tab-lens" aria-hidden="true"></div>';
+    TAB_DEFS.forEach((t,i)=>{
+      const active = i===curIdx;
+      html += '<button type="button" role="tab" aria-selected="'+active+'" class="tab-item'+(active?' active':'')+'" onclick="WC.switchTab(\''+t.id+'\')">'+t.icon()+'<span>'+t.label+'</span></button>';
     });
-    html += '</div></div>';
+    html += '</nav></div>';
     return html;
+  }
+
+  // После перерисовки плавно перевозим «линзу» на новую вкладку
+  function animateTabBar(){
+    const bar = document.getElementById('tabBar');
+    if(!bar) return;
+    const curIdx = tabIndex();
+    if(curIdx === lastTabIdx) return;
+    void bar.offsetWidth; // фиксируем стартовое положение, чтобы сработал переход
+    bar.style.setProperty('--idx', curIdx);
+    setTabAccent(bar, TAB_DEFS[curIdx]);
+    lastTabIdx = curIdx;
   }
 
   function render(){
@@ -955,6 +1102,7 @@
     html += renderTabBar();
 
     setHtmlPreservingFocus(app, html);
+    animateTabBar();
   }
 
   function renderCalendarTab(){
@@ -1689,6 +1837,9 @@
     patternOpen = false;
     render();
   }, true);
+
+  // Без этого iOS Safari не показывает :active-состояние (нажатие кнопок панели «пружинит»)
+  document.addEventListener('touchstart', function(){}, { passive:true });
 
   loadState();
 })();
