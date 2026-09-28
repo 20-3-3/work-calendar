@@ -43,6 +43,7 @@
     --amber: #FF9500;
     --teal: #00E5FF;
     --violet: #9B5CFF;
+    --green: #39FF14;
     --off: #6C6F72;
     --danger: #FF4D6D;
     --neon-white: #FFFFFF;
@@ -53,6 +54,7 @@
   }
   :root.light-theme{
     --violet: #7B2FFF;
+    --green: #1C9A08;
     --bg: #F4F2EE;
     --panel: #FFFFFF;
     --panel-alt: #ECE9E2;
@@ -512,7 +514,7 @@
     isolation: isolate;
     pointer-events: auto;
     display: grid;
-    grid-template-columns: repeat(3, 92px);
+    grid-template-columns: repeat(4, 84px);
     width: auto;
     margin: 0;
     padding: 4px;
@@ -576,7 +578,7 @@
     position:absolute;
     z-index:1;
     top:4px; bottom:4px; left:4px;
-    width: calc((100% - 8px) / 3);
+    width: calc((100% - 8px) / 4);
     border-radius: 27px;
     background: var(--accent-bg);
     box-shadow:
@@ -753,6 +755,19 @@
   :root:not(.light-theme) .confirm-btn.ok{ color:#000; }
   /* Нижняя панель — серое стекло, как в «Телефоне» и App Store */
   :root:not(.light-theme) .tab-bar{ background: rgba(37,37,40,0.70); }
+  /* Импорт графика с фото */
+  .imp-card{ margin-top: 16px; }
+  .imp-status{ font-size: 14px; line-height: 1.4; margin-bottom: 10px; }
+  .imp-hint{ font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 10px; }
+  .imp-bar{ height: 6px; border-radius: 3px; background: var(--panel-alt); overflow: hidden; }
+  .imp-bar > div{ height: 100%; border-radius: 3px; transition: width .3s ease; }
+  .imp-pick{ border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .imp-pick img{ display:block; width: 100%; height: auto; cursor: crosshair; }
+  .imp-preview{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; background:#fff; touch-action: pan-x pan-y; }
+  .imp-preview img{ display:block; height: 88px; width: auto; max-width: none; }
+  .imp-grid .day{ min-height: 40px; }
+  .imp-day-edit{ margin-top: 12px; padding: 12px; border-radius: 16px; background: var(--panel-alt); }
+  .imp-grid .day .amt{ font-size: 9px; font-weight: 600; }
   /* Активное поле ввода — неоновая подсветка вместо стандартной рамки браузера */
   html:root .field input:focus, html:root .hours-row input:focus{
     outline: none;
@@ -785,7 +800,7 @@
   applyTheme();
   if(window.matchMedia){
     const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const onSystemChange = function(){ if(themePref==='auto'){ applyTheme(); render(); } };
+    const onSystemChange = function(){ if(themePref==='auto'){ applyTheme(); softRender(); } };
     if(mq.addEventListener) mq.addEventListener('change', onSystemChange);
     else if(mq.addListener) mq.addListener(onSystemChange);
   }
@@ -800,7 +815,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = 'iOS · 2026-09-28 · v11';
+  const APP_BUILD = 'iOS · 2026-09-28 · v14';
 
   let state = {
     version: CURRENT_VERSION,
@@ -815,7 +830,6 @@
   let currentTab = 'calendar'; // 'calendar' | 'reports' | 'settings'
   let view = { year: new Date().getFullYear(), month: new Date().getMonth() };
   let selectedDate = null;
-  let patternOpen = false;
   let editorPickerOpen = false;
   let statsYear = new Date().getFullYear();
   let lastWeekDateKeys = [];
@@ -972,6 +986,7 @@
     state.workplaces = list;
     state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
     state.payments = Array.isArray(state.payments) ? state.payments : [];
+    state.profile = (state.profile && typeof state.profile === 'object') ? state.profile : {};
   }
 
   function applyLoaded(raw){
@@ -980,6 +995,7 @@
     if(parsed.workplaces) state.workplaces = parsed.workplaces;
     if(parsed.shifts) state.shifts = parsed.shifts;
     state.payments = Array.isArray(parsed.payments) ? parsed.payments : [];
+    if(parsed.profile && typeof parsed.profile === 'object') state.profile = parsed.profile;
     state.version = parsed.version;
     normalizeState();
   }
@@ -1005,7 +1021,27 @@
     render();
   }
 
+  // Во время набора текста не пишем в хранилище на каждую букву: сохраняем после короткой паузы.
+  // При сворачивании приложения всё несохранённое записывается немедленно.
+  let saveTimer = null;
+  function scheduleSave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ saveTimer = null; saveState(); }, 400);
+  }
+  function flushSave(){ if(saveTimer){ clearTimeout(saveTimer); saveTimer = null; saveState(); } }
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') flushSave(); });
+  window.addEventListener('pagehide', flushSave);
+
+  // Число из поля ввода: понимает и запятую, и точку («7,5» и «7.5»)
+  function parseNum(v){
+    const s = String(v == null ? '' : v).trim().replace(',', '.');
+    if(!/^\d*\.?\d*$/.test(s) || s === '' || s === '.') return NaN;
+    return parseFloat(s);
+  }
+  function numText(n){ return (n == null || n === '' || !isFinite(n)) ? '' : String(n).replace('.', ','); }
+
   async function saveState(){
+    clearTimeout(saveTimer); saveTimer = null;
     state.version = CURRENT_VERSION;
     const raw = JSON.stringify(state);
     // Сохраняем в localStorage СИНХРОННО и в первую очередь — это единственное
@@ -1193,7 +1229,7 @@
     html += '      <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentFrom\')">'+fmtDateShort(f.periodFrom)+'<span style="color:var(--muted);">▾</span></div></div>';
     html += '      <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentTo\')">'+fmtDateShort(f.periodTo)+'<span style="color:var(--muted);">▾</span></div></div>';
     html += '    </div>';
-    html += '    <div class="field"><label>Сумма</label><input type="number" inputmode="decimal" min="0" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.setPaymentField(\'amount\', this.value)"></div>';
+    html += '    <div class="field"><label>Сумма</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.editPayment(\'amount\', this.value)"></div>';
     html += '    <div class="field"><label>Место работы (необязательно)</label><div class="choice-row">';
     html += '      <div class="choice'+(f.workplaceId===''?' active':'')+'" style="color:var(--teal)'+(f.workplaceId===''?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPaymentField(\'workplaceId\',\'\')">Все</div>';
     activeWorkplaces().forEach(w=>{
@@ -1201,7 +1237,7 @@
       html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPaymentField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
     });
     html += '    </div></div>';
-    html += '    <div class="field"><label>Заметка (необязательно)</label><input type="text" autocomplete="off" id="paymentNote" value="'+esc(f.note)+'" oninput="WC.setPaymentField(\'note\', this.value)"></div>';
+    html += '    <div class="field"><label>Заметка (необязательно)</label><input type="text" autocomplete="off" enterkeyhint="done" id="paymentNote" value="'+esc(f.note)+'" oninput="WC.editPayment(\'note\', this.value)"></div>';
     html += '    <div class="confirm-actions">';
     html += '      <div class="confirm-btn cancel" onclick="WC.cancelPaymentForm()">Отмена</div>';
     html += '      <div class="confirm-btn ok" onclick="WC.savePayment()">Сохранить</div>';
@@ -1215,6 +1251,7 @@
   // color — неон для подсветки; inkDark/inkLight — более читаемый оттенок для подписи в тёмной/светлой теме.
   const TAB_DEFS = [
     { id:'calendar', label:'Календарь', icon: calendarTabIcon, color:'#FF9500', inkDark:'#FF9F1A', inkLight:'#B85A00' },
+    { id:'pattern',  label:'График',    icon: patternIcon,     color:'#39FF14', inkDark:'#62FF45', inkLight:'#1F7A0C' },
     { id:'reports',  label:'Отчёты',    icon: analyticsIcon,   color:'#00E5FF', inkDark:'#33EBFF', inkLight:'#007C94' },
     { id:'settings', label:'Настройки', icon: gearIcon,        color:'#7B2FFF', inkDark:'#AD85FF', inkLight:'#5B16E0' }
   ];
@@ -1294,7 +1331,7 @@
       updateInfo.latest = b;
       if(b && b !== APP_BUILD){
         updateInfo.status = 'available';
-        if(manual) applyUpdate(); else render();
+        if(manual) applyUpdate(); else softRender();
       } else {
         updateInfo.status = 'uptodate';
         if(manual) render();
@@ -1314,7 +1351,15 @@
         location.replace(base+'?v='+Date.now());
       });
   }
+  // Короткое уведомление над нижней панелью (исчезает само)
+  let flashMsg = null, flashTimer = null;
+  function showFlash(text){
+    flashMsg = text;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function(){ flashMsg = null; softRender(); }, 2500);
+  }
   function renderUpdateToast(){
+    if(flashMsg) return '<div class="update-toast"><span>'+esc(flashMsg)+'</span></div>';
     if(updateInfo.status==='done') return '<div class="update-toast"><span>✓ Обновлено: '+esc(APP_BUILD)+'</span></div>';
     if(updateInfo.status==='same') return '<div class="update-toast"><span>Новая версия ещё не появилась на сайте — попробуй через минуту</span></div>';
     if(updateInfo.status!=='available' || updateInfo.dismissed || currentTab==='settings') return '';
@@ -1334,8 +1379,26 @@
     return html;
   }
 
+  // Перерисовка «по своей инициативе» (уведомление, проверка обновлений, смена темы системы)
+  // не выполняется, пока человек печатает в поле, — она случится сразу после выхода из поля.
+  let deferredRender = false;
+  function isTyping(){
+    const a = document.activeElement;
+    return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.type !== 'file');
+  }
+  function softRender(){ if(isTyping()){ deferredRender = true; return; } render(); }
+  document.addEventListener('focusout', function(){
+    if(!deferredRender) return;
+    setTimeout(function(){ if(deferredRender && !isTyping()){ deferredRender = false; render(); } }, 0);
+  });
+  // «Готово»/Enter на клавиатуре — закрыть клавиатуру
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && e.target && e.target.tagName === 'INPUT'){ e.preventDefault(); e.target.blur(); }
+  });
+
   function render(){
     if(!loaded) return;
+    deferredRender = false;
     const app = document.getElementById('app');
 
     let html = '';
@@ -1343,7 +1406,8 @@
       html += '<div style="background:rgba(255,77,109,0.15);border:1px solid var(--danger);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.4;">⚠ Не удалось сохранить данные в этом браузере (возможно, включён приватный режим или закончилось место). Изменения могут потеряться — скачай резервную копию в настройках.</div>';
     }
 
-    if(currentTab==='reports') html += renderReportsTab();
+    if(currentTab==='pattern') html += renderPatternTab();
+    else if(currentTab==='reports') html += renderReportsTab();
     else if(currentTab==='settings') html += renderSettingsTab();
     else html += renderCalendarTab();
 
@@ -1381,7 +1445,6 @@
     let html = '';
     html += '<div class="top">';
     html += '  <div><div class="brand">Табель</div><div class="month-title'+slideCls()+'" style="color:'+seasonColor(m)+';text-shadow:0 0 14px '+seasonColor(m)+'77;">'+MONTHS[m]+' '+y+'</div></div>';
-    html += '  <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
     html += '</div>';
 
     html += '<div class="nav-row">';
@@ -1394,7 +1457,6 @@
     html += '  <div class="today-link" style="'+(rangeMode?'color:var(--amber);border-color:var(--amber);':'')+'" onclick="WC.toggleRangeMode()">'+(rangeMode?'Выйти из режима периода':'Выбрать период на календаре')+'</div>';
     html += '</div>';
 
-    html += renderPatternPanel();
 
     html += '<div class="weekdays">' + WEEKDAYS.map(w=>'<div>'+w+'</div>').join('') + '</div>';
 
@@ -1428,7 +1490,7 @@
       }
       html += '<div class="'+cls+'" onclick="WC.dayTap(\''+k+'\')">';
       html += '  <div class="num">'+d+'</div>';
-      html += '  <div class="amt mono" style="'+amtStyle+'">'+amt+'</div>';
+      html += '  <div class="amt mono" id="amt-'+k+'" style="'+amtStyle+'">'+amt+'</div>';
       html += bar;
       html += '</div>';
     }
@@ -1589,11 +1651,27 @@
     return html;
   }
 
+  function renderPatternTab(){
+    let html = '<div class="top">';
+    html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:var(--green);text-shadow:0 0 14px #39FF1466;">График</div></div>';
+    html += '</div>';
+    html += renderPatternPanel();
+    html += renderImportCard();
+    return html;
+  }
+
   function renderSettingsTab(){
     let html = '<div class="top">';
     html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:var(--violet);text-shadow:0 0 14px #7B2FFF77;">Настройки</div></div>';
     html += '</div>';
     html += renderSettings();
+    return html;
+  }
+
+  function editorPayHtml(s){
+    const wp = getWorkplace(s.workplaceId), isDaily = wp && wp.payType==='daily', pay = calcPay(s);
+    let html = 'Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
+    if(isDaily && s.hours>0) html += ' <span style="color:var(--muted);">· ≈ '+fmtMoney(pay/s.hours, wp.currency)+'/ч</span>';
     return html;
   }
 
@@ -1633,13 +1711,8 @@
     if(s.workplaceId){
       const wp = getWorkplace(s.workplaceId);
       const isDaily = wp && wp.payType==='daily';
-      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="number" inputmode="decimal" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
-      const pay = calcPay(s);
-      html += '  <div class="preview-pay">Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
-      if(isDaily && s.hours>0){
-        html += ' <span style="color:var(--muted);">· ≈ '+fmtMoney(pay/s.hours, wp.currency)+'/ч</span>';
-      }
-      html += '</div>';
+      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
+      html += '  <div class="preview-pay" id="editorPay">'+editorPayHtml(s)+'</div>';
     }
 
     html += '  <div class="editor-actions">';
@@ -1692,10 +1765,19 @@
     return html;
   }
 
+  function patternPresetsHtml(pc){
+    let html = '';
+    [[2,2],[3,3],[4,3],[5,2]].forEach(function(p){
+      const active = patternForm.workDays===p[0] && patternForm.offDays===p[1];
+      html += '<div class="choice'+(active?' active':'')+'" style="color:'+pc+(active?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternPreset('+p[0]+','+p[1]+')">'+p[0]+'/'+p[1]+'</div>';
+    });
+    return html;
+  }
+
   function renderPatternPanel(){
     const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
-    let html = '<div class="settings'+(patternOpen?' open':'')+'" style="--focus:'+pc+';border-color:'+hexA(pc,0.35)+';">';
-    html += '  <div class="section-title">График по шаблону</div>';
+    let html = '<div class="settings open" style="margin-top:0;--focus:'+pc+';border-color:'+hexA(pc,0.35)+';">';
+    html += '  <div class="section-title">Заполнить по шаблону</div>';
 
     html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
     activeWorkplaces().forEach(w=>{
@@ -1704,16 +1786,11 @@
     });
     html += '  </div></div>';
 
-    html += '  <div class="field"><label>Быстрый выбор</label><div class="choice-row">';
-    [[2,2],[3,3],[4,3],[5,2]].forEach(p=>{
-      const active = patternForm.workDays===p[0] && patternForm.offDays===p[1];
-      html += '<div class="choice'+(active?' active':'')+'" style="color:'+pc+(active?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternPreset('+p[0]+','+p[1]+')">'+p[0]+'/'+p[1]+'</div>';
-    });
-    html += '  </div></div>';
+    html += '  <div class="field"><label>Быстрый выбор</label><div class="choice-row" id="patternPresets">'+patternPresetsHtml(pc)+'</div></div>';
 
     html += '  <div class="rate-row">';
-    html += '    <div class="field"><label>Смен подряд</label><input type="number" inputmode="numeric" min="1" id="patternWorkDays" value="'+patternForm.workDays+'" oninput="WC.setPatternField(\'workDays\', this.value)"></div>';
-    html += '    <div class="field"><label>Выходных подряд</label><input type="number" inputmode="numeric" min="0" id="patternOffDays" value="'+patternForm.offDays+'" oninput="WC.setPatternField(\'offDays\', this.value)"></div>';
+    html += '    <div class="field"><label>Смен подряд</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="numeric" id="patternWorkDays" value="'+numText(patternForm.workDays)+'" oninput="WC.setPatternField(\'workDays\', this.value)"></div>';
+    html += '    <div class="field"><label>Выходных подряд</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="numeric" id="patternOffDays" value="'+numText(patternForm.offDays)+'" oninput="WC.setPatternField(\'offDays\', this.value)"></div>';
     html += '  </div>';
 
     html += '  <div class="field"><label>Начать с</label><div class="date-trigger" onclick="WC.openDatePicker(\'patternStart\')">'+fmtDateShort(patternForm.startDate)+'<span style="color:var(--muted);">▾</span></div></div>';
@@ -1725,7 +1802,7 @@
 
     const wp = getWorkplace(patternForm.workplaceId);
     const isDaily = wp && wp.payType==='daily';
-    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="number" inputmode="decimal" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="patternHours" value="'+numText(patternForm.hours)+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
     html += '    <div class="choice active" style="flex:none;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
@@ -1758,14 +1835,14 @@
         html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
       }
       html += '    </div>';
-      html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.updateWp('+idx+',\'name\',this.value)"></div>';
+      html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.editWp('+idx+',\'name\',this.value)"></div>';
       html += '    <div class="field"><label>Тип оплаты</label><div class="choice-row">';
       html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:'+w.color+(w.payType==='hourly'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
       html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:'+w.color+(w.payType==='daily'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
       html += '    </div></div>';
       html += '    <div class="rate-row">';
-      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="number" inputmode="decimal" min="0" id="wpRateInput'+idx+'" value="'+w.rate+'" oninput="WC.updateWp('+idx+',\'rate\',this.value)"></div>';
-      html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.updateWp('+idx+',\'currency\',this.value)"></div>';
+      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpRateInput'+idx+'" value="'+numText(w.rate)+'" oninput="WC.editWp('+idx+',\'rate\',this.value)"></div>';
+      html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.editWp('+idx+',\'currency\',this.value)"></div>';
       html += '    </div>';
       html += '    <div class="field"><label>Цвет</label><div class="color-swatches">';
       SWATCH_COLORS.forEach(c=>{
@@ -1832,6 +1909,811 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>';
   }
 
+  // ======================= Импорт графика с фото =======================
+  // Как это работает (всё считается прямо на телефоне, фото никуда не отправляется):
+  // 1) фото переводится в серое изображение удобного размера;
+  // 2) распознавание текста (Tesseract, русский язык) находит номера дней в шапке, слова месяца/года
+  //    и строку с фамилией и именем сотрудника;
+  // 3) по номерам дней вычисляется, где проходит каждый столбец (с учётом наклона и перспективы);
+  // 4) все горизонтальные линии таблицы отслеживаются по отдельности — строка сотрудника берётся между
+  //    её собственной верхней и нижней линией, поэтому снимок под углом не сбивает строки;
+  // 5) в каждой клетке ищутся «чернила»: линия сетки отличается от цифры тем, что проходит через границу строки,
+  //    цветная заливка — тем, что она светлее текста;
+  // 6) «1» — смена, двузначные числа — часы (читаются по данным распознавания или сравнением с эталонными цифрами);
+  // 7) результат показывается на проверку, и только после подтверждения записывается в календарь.
+
+  const TESS_SRC = [
+    'https://fastly.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+    'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+  ];
+  const TESS_OPTS = [
+    { workerPath:'https://fastly.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+      corePath:'https://fastly.jsdelivr.net/npm/tesseract.js-core@5',
+      langPath:'https://fastly.jsdelivr.net/npm/@tesseract.js-data/rus/4.0.0_best_int' },
+    { workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+      corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5',
+      langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/rus/4.0.0_best_int' }
+  ];
+  let tessLoading = null;
+  function ensureTesseract(){
+    if(typeof Tesseract !== 'undefined') return Promise.resolve();
+    if(!tessLoading){
+      tessLoading = TESS_SRC.reduce(function(p, src){
+        return p.catch(function(){ return (typeof Tesseract !== 'undefined') ? undefined : loadScriptOnce(src, 25000); });
+      }, Promise.reject(new Error('start'))).then(function(){ if(typeof Tesseract === 'undefined') throw new Error('no Tesseract'); });
+      tessLoading.catch(function(){ tessLoading = null; });
+    }
+    return tessLoading;
+  }
+
+  // Состояние импорта (для отрисовки) и тяжёлые данные (картинка) — отдельно
+  let imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
+  let impData = null;      // { canvas, G, W, H, words, header, ... }
+  let impWorker = null;
+  let impRun = 0;          // номер запуска — чтобы «Отмена» останавливала старый
+
+  function impProfile(){
+    if(!state.profile || typeof state.profile !== 'object') state.profile = {};
+    const p = state.profile;
+    if(typeof p.fio !== 'string') p.fio = '';
+    if(!(p.importHours > 0)) p.importHours = 12;
+    if(p.importOff !== 'off') p.importOff = 'keep';
+    const aw = activeWorkplaces();
+    if(!p.importWp || !aw.some(w=>w.id===p.importWp)) p.importWp = aw[0] ? aw[0].id : null;
+    return p;
+  }
+
+  // ---------- мелкая математика ----------
+  function percentileSorted(sorted, p){
+    if(!sorted.length) return 0;
+    const i = (sorted.length-1)*p/100, lo = Math.floor(i), hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi]-sorted[lo])*(i-lo);
+  }
+  function percentile(arr, p){ return percentileSorted(Array.prototype.slice.call(arr).sort(function(a,b){return a-b;}), p); }
+  function median(arr){ return percentile(arr, 50); }
+  function polyfit(xs, ys, deg){
+    // МНК через нормальные уравнения (deg 1 или 2)
+    const n = deg+1, A = [], B = [];
+    for(let i=0;i<n;i++){ A.push(new Array(n).fill(0)); B.push(0); }
+    for(let k=0;k<xs.length;k++){
+      const pw = []; let v = 1;
+      for(let i=0;i<2*n;i++){ pw.push(v); v *= xs[k]; }
+      for(let i=0;i<n;i++){ for(let j=0;j<n;j++) A[i][j] += pw[i+j]; B[i] += ys[k]*pw[i]; }
+    }
+    for(let i=0;i<n;i++){ // Гаусс
+      let piv = i; for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[piv][i])) piv = r;
+      [A[i],A[piv]] = [A[piv],A[i]]; [B[i],B[piv]] = [B[piv],B[i]];
+      if(Math.abs(A[i][i]) < 1e-12) return null;
+      for(let r=i+1;r<n;r++){ const f = A[r][i]/A[i][i]; for(let c=i;c<n;c++) A[r][c] -= f*A[i][c]; B[r] -= f*B[i]; }
+    }
+    const c = new Array(n).fill(0);
+    for(let i=n-1;i>=0;i--){ let s = B[i]; for(let j=i+1;j<n;j++) s -= A[i][j]*c[j]; c[i] = s/A[i][i]; }
+    return c; // c[0] + c[1]x + c[2]x²
+  }
+  function polyval(c, x){ let s = 0, v = 1; for(let i=0;i<c.length;i++){ s += c[i]*v; v *= x; } return s; }
+  function interp(x, xs, ys){
+    if(x <= xs[0]) return ys[0] + (x-xs[0])*(ys[1]-ys[0])/((xs[1]-xs[0])||1);
+    const n = xs.length;
+    if(x >= xs[n-1]) return ys[n-1] + (x-xs[n-1])*(ys[n-1]-ys[n-2])/((xs[n-1]-xs[n-2])||1);
+    let i = 1; while(xs[i] < x) i++;
+    return ys[i-1] + (x-xs[i-1])*(ys[i]-ys[i-1])/((xs[i]-xs[i-1])||1);
+  }
+
+  // ---------- подготовка фото ----------
+  function loadImageFromFile(file){
+    return new Promise(function(resolve, reject){
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function(){ resolve(img); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000); };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+  function prepImage(img){
+    const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height;
+    // мелкий текст увеличиваем (распознаванию нужно ≥20 px на строку), огромные фото — уменьшаем
+    let sc = W0 < 2200 ? Math.min(3, 3000/W0) : Math.min(1, 3200/W0);
+    const maxArea = 12e6; // ограничение памяти iOS для canvas
+    if(W0*H0*sc*sc > maxArea) sc = Math.sqrt(maxArea/(W0*H0));
+    const W = Math.max(1, Math.round(W0*sc)), H = Math.max(1, Math.round(H0*sc));
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d', { willReadFrequently:true });
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+    ctx.drawImage(img, 0, 0, W, H);
+    const id = ctx.getImageData(0,0,W,H), d = id.data;
+    const G = new Float32Array(W*H);
+    for(let i=0,j=0;i<G.length;i++,j+=4){
+      const v = 0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2];
+      G[i] = v; d[j] = d[j+1] = d[j+2] = v; d[j+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+    // уровень «чернил» по всему фото: 1-й процентиль яркости (через гистограмму — быстро)
+    const hist = new Uint32Array(256);
+    for(let i=0;i<G.length;i+=3) hist[G[i]|0]++;
+    let acc = 0, tot = 0; for(let i=0;i<256;i++) tot += hist[i];
+    let textLevel = 0; for(let i=0;i<256;i++){ acc += hist[i]; if(acc >= tot*0.01){ textLevel = i; break; } }
+    return { canvas:c, G:G, W:W, H:H, scale:sc, textLevel:textLevel };
+  }
+
+  // ---------- распознавание текста ----------
+  function ocrWords(data){
+    let words = data && data.words;
+    if(!words || !words.length){
+      words = [];
+      ((data && data.blocks) || []).forEach(function(b){ (b.paragraphs||[]).forEach(function(p){ (p.lines||[]).forEach(function(l){ (l.words||[]).forEach(function(w){ words.push(w); }); }); }); });
+    }
+    return words.map(function(w){
+      const bb = w.bbox || {};
+      const o = { text:String(w.text||'').trim(), x0:bb.x0, y0:bb.y0, x1:bb.x1, y1:bb.y1 };
+      o.xc = (o.x0+o.x1)/2; o.yc = (o.y0+o.y1)/2; o.h = o.y1-o.y0;
+      return o;
+    }).filter(function(o){ return o.text && isFinite(o.x0) && o.h > 0; });
+  }
+  async function runOCR(canvas, run){
+    let lastErr = null;
+    for(let k=0; k<TESS_OPTS.length; k++){
+      try{
+        const opts = Object.assign({
+          logger: function(m){
+            if(run !== impRun) return;
+            const map = {
+              'loading tesseract core':'Загружаю модуль распознавания…',
+              'initializing tesseract':'Запускаю распознавание…',
+              'loading language traineddata':'Загружаю русский язык (только в первый раз)…',
+              'initializing api':'Готовлюсь читать фото…',
+              'recognizing text':'Читаю фото…'
+            };
+            const msg = map[m.status];
+            if(msg){ imp.msg = msg; imp.pct = Math.round((m.progress||0)*100); softRender(); }
+          }
+        }, TESS_OPTS[k]);
+        impWorker = await Tesseract.createWorker('rus', 1, opts);
+        if(run !== impRun) throw new Error('cancelled');
+        await impWorker.setParameters({ tessedit_pageseg_mode:'11', preserve_interword_spaces:'1' });
+        const r = await impWorker.recognize(canvas);
+        const w = impWorker; impWorker = null; w.terminate().catch(function(){});
+        return ocrWords(r.data);
+      }catch(e){
+        lastErr = e;
+        if(impWorker){ const w = impWorker; impWorker = null; try{ w.terminate(); }catch(_){} }
+        if(e && e.message === 'cancelled') throw e;
+      }
+    }
+    throw lastErr || new Error('ocr');
+  }
+
+  // ---------- шапка: номера дней → положение столбцов ----------
+  function fitHeader(words, W){
+    const nums = words.filter(function(t){ return /^\d{1,2}$/.test(t.text) && +t.text >= 1 && +t.text <= 31; });
+    if(nums.length < 4) return null;
+    const hMed = median(nums.map(function(t){ return t.h; }));
+    const cand = nums.filter(function(t){ return t.h > 0.45*hMed; }).map(function(t){ return Object.assign({ d:+t.text }, t); });
+    let best = null;
+    for(let i=0;i<cand.length;i++) for(let j=0;j<cand.length;j++){
+      const a = cand[i], b = cand[j];
+      if(a.d >= b.d) continue;
+      const B = (b.xc-a.xc)/(b.d-a.d);
+      if(B < W/160 || B > W/6) continue;
+      const A = a.xc - B*a.d;
+      const sl = (b.yc-a.yc)/((b.xc-a.xc)||1);
+      if(Math.abs(sl) > 0.08) continue;
+      const hh = Math.max(a.h, b.h);
+      const inl = cand.filter(function(t){ return Math.abs(t.xc-(A+B*t.d)) < 0.22*B && Math.abs(t.yc-(a.yc+sl*(t.xc-a.xc))) < 0.6*hh; });
+      const days = {}; inl.forEach(function(t){ days[t.d] = 1; });
+      const nd = Object.keys(days).length;
+      if(!best || nd > best.nd) best = { nd:nd, inl:inl };
+    }
+    if(!best || best.nd < 4) return null;
+    // по одному слову на день (ближайшее к средней линии)
+    const byDay = {};
+    best.inl.forEach(function(t){ if(!byDay[t.d] || t.h > byDay[t.d].h) byDay[t.d] = t; });
+    const pts = Object.keys(byDay).map(function(k){ return byDay[k]; });
+    const ds = pts.map(function(t){ return t.d; }), xs = pts.map(function(t){ return t.xc; }), ys = pts.map(function(t){ return t.yc; });
+    const span = Math.max.apply(null, ds) - Math.min.apply(null, ds);
+    const px = polyfit(ds, xs, (pts.length >= 8 && span >= 15) ? 2 : 1) || polyfit(ds, xs, 1);
+    const py = polyfit(xs, ys, 1);
+    return { px:px, py:py, days:ds, maxDay:Math.max.apply(null, ds), h:median(pts.map(function(t){ return t.h; })) };
+  }
+  function xOfDay(H, d){ return polyval(H.px, d); }
+  function colPitch(H, nd){ return (xOfDay(H, nd) - xOfDay(H, 1)) / (nd - 1); }
+  function dayOfX(H, x, nd){
+    // обратная функция: ищем день по координате (перебором с шагом 0.01 — быстро и надёжно)
+    let lo = 0, hi = nd + 1;
+    for(let k=0;k<40;k++){ const mid = (lo+hi)/2; if(xOfDay(H, mid) < x) lo = mid; else hi = mid; }
+    return (lo+hi)/2;
+  }
+
+  // ---------- горизонтальные линии таблицы ----------
+  function segLines(P, a, b, y0, y1){
+    const G = P.G, W = P.W;
+    a = Math.max(0, a|0); b = Math.min(W, b|0); y0 = Math.max(0, y0|0); y1 = Math.min(P.H, y1|0);
+    if(b-a < 2 || y1-y0 < 2) return [];
+    const hist = new Uint32Array(256); let n = 0;
+    for(let y=y0;y<y1;y+=2) for(let x=a;x<b;x+=2){ hist[G[y*W+x]|0]++; n++; }
+    let acc = 0, med = 0; for(let i=0;i<256;i++){ acc += hist[i]; if(acc >= n/2){ med = i; break; } }
+    const thr = med - 25, ys = [];
+    let run = -1;
+    for(let y=y0;y<y1;y++){
+      let cnt = 0; const row = y*W;
+      for(let x=a;x<b;x++) if(G[row+x] < thr) cnt++;
+      const isLine = cnt > 0.5*(b-a);
+      if(isLine && run < 0) run = y;
+      if(!isLine && run >= 0){ ys.push((run + y - 1)/2); run = -1; }
+    }
+    if(run >= 0) ys.push((run + y1 - 1)/2);
+    return ys;
+  }
+  function trackLines(P, x0, x1, slope0, segW){
+    const segs = [];
+    for(let a=x0; a<x1; a+=segW){ const b = Math.min(a+segW, x1); segs.push({ xc:(a+b)/2, ys:segLines(P, a, b, 0, P.H) }); }
+    const tol = Math.max(2.5, 0.12*segW/2);
+    const lines = [];
+    segs.forEach(function(sg){
+      const used = {};
+      lines.forEach(function(L){
+        const pred = L.ys[L.ys.length-1] + L.slope*(sg.xc - L.xs[L.xs.length-1]);
+        let bestJ = -1;
+        sg.ys.forEach(function(y, j){ if(!used[j] && Math.abs(y-pred) <= tol && (bestJ < 0 || Math.abs(y-pred) < Math.abs(sg.ys[bestJ]-pred))) bestJ = j; });
+        if(bestJ >= 0){
+          used[bestJ] = 1; const y = sg.ys[bestJ];
+          if(sg.xc !== L.xs[0]){ const s = (y - L.ys[0])/(sg.xc - L.xs[0]); L.slope = L.xs.length < 3 ? 0.5*L.slope + 0.5*s : s; }
+          L.xs.push(sg.xc); L.ys.push(y);
+        }
+      });
+      sg.ys.forEach(function(y, j){ if(!used[j]) lines.push({ xs:[sg.xc], ys:[y], slope:slope0 }); });
+    });
+    const out = [];
+    lines.forEach(function(L){
+      if(L.xs.length >= Math.max(3, 0.4*segs.length)){
+        const c = polyfit(L.xs, L.ys, L.xs.length < 6 ? 1 : 2) || polyfit(L.xs, L.ys, 1);
+        if(c) out.push(c);
+      }
+    });
+    const mid = (x0+x1)/2;
+    out.sort(function(p, q){ return polyval(p, mid) - polyval(q, mid); });
+    return out;
+  }
+  function rowBand(lines, xName, yName, pitch, slope){
+    const at = lines.map(function(c){ return { y:polyval(c, xName), c:c }; });
+    const above = at.filter(function(t){ return t.y < yName - 0.1*pitch && yName - t.y < 1.2*pitch; });
+    const below = at.filter(function(t){ return t.y > yName + 0.1*pitch && t.y - yName < 1.2*pitch; });
+    const up = above.length ? above.reduce(function(m, t){ return t.y > m.y ? t : m; }) : null;
+    const dn = below.length ? below.reduce(function(m, t){ return t.y < m.y ? t : m; }) : null;
+    if(up && dn) return { top:function(x){ return polyval(up.c, x); }, bot:function(x){ return polyval(dn.c, x); } };
+    if(up) return { top:function(x){ return polyval(up.c, x); }, bot:function(x){ return polyval(up.c, x) + pitch; } };
+    if(dn) return { top:function(x){ return polyval(dn.c, x) - pitch; }, bot:function(x){ return polyval(dn.c, x); } };
+    return { top:function(x){ return yName + slope*(x-xName) - pitch/2; }, bot:function(x){ return yName + slope*(x-xName) + pitch/2; } };
+  }
+  function estimatePitch(lines, x, colW){
+    const ys = lines.map(function(c){ return polyval(c, x); }).sort(function(a,b){ return a-b; });
+    const diffs = [];
+    for(let i=1;i<ys.length;i++){ const d = ys[i]-ys[i-1]; if(d > 0.3*colW && d < 1.6*colW) diffs.push(d); }
+    return diffs.length ? median(diffs) : null;
+  }
+
+  // Выпрямленная полоса строки: n строк от доли f0 до f1 высоты строки, по одному столбцу на пиксель
+  function sampleBand(P, band, xs0, xs1, f0, f1, n){
+    const G = P.G, W = P.W, Hh = P.H, w = xs1 - xs0;
+    const S = new Float32Array(n*w);
+    for(let i=0;i<w;i++){
+      const x = xs0 + i, t = band.top(x), h = band.bot(x) - t;
+      for(let r=0;r<n;r++){
+        const y = t + (f0 + (f1-f0)*(n > 1 ? r/(n-1) : 0))*h;
+        let y0 = Math.floor(y); const fr = y - y0;
+        if(y0 < 0) y0 = 0; if(y0 > Hh-2) y0 = Hh-2;
+        S[r*w+i] = G[y0*W+x]*(1-fr) + G[(y0+1)*W+x]*fr;
+      }
+    }
+    return { S:S, w:w, n:n };
+  }
+
+  // ---------- распознавание цифр по эталонам (для двузначных часов) ----------
+  let digitTemplates = null;
+  function normGlyph(mask, mw, mh){
+    let x0 = mw, x1 = -1, y0 = mh, y1 = -1;
+    for(let y=0;y<mh;y++) for(let x=0;x<mw;x++) if(mask[y*mw+x]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    if(x1 < 0) return null;
+    const w = x1-x0+1, h = y1-y0+1, TW = 10, TH = 16;
+    const out = new Float32Array(TW*TH);
+    const nw = Math.max(1, Math.min(TW, Math.round(w*TH/h))), ox = (TW-nw) >> 1;
+    for(let ty=0;ty<TH;ty++) for(let tx=0;tx<nw;tx++){
+      // усреднение по соответствующей области исходной маски
+      const sx0 = x0 + tx*w/nw, sx1 = x0 + (tx+1)*w/nw, sy0 = y0 + ty*h/TH, sy1 = y0 + (ty+1)*h/TH;
+      let s = 0, c = 0;
+      for(let y=Math.floor(sy0); y<Math.max(Math.floor(sy0)+1, Math.ceil(sy1)); y++)
+        for(let x=Math.floor(sx0); x<Math.max(Math.floor(sx0)+1, Math.ceil(sx1)); x++){ s += mask[y*mw+x] ? 1 : 0; c++; }
+      out[ty*TW + ox + tx] = c ? s/c : 0;
+    }
+    return { v:out, asp:w/h };
+  }
+  function buildDigitTemplates(){
+    const fonts = ['"Times New Roman", Times, serif', 'Georgia, serif', 'Arial, Helvetica, sans-serif', 'Calibri, Carlito, sans-serif'];
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d', { willReadFrequently:true });
+    const T = [];
+    fonts.forEach(function(f){
+      for(let d=0; d<10; d++){
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,64,64);
+        ctx.fillStyle = '#fff'; ctx.font = '44px ' + f; ctx.textBaseline = 'middle';
+        ctx.fillText(String(d), 14, 32);
+        const px = ctx.getImageData(0,0,64,64).data, m = new Uint8Array(64*64);
+        for(let i=0;i<m.length;i++) m[i] = px[i*4] > 128 ? 1 : 0;
+        const g = normGlyph(m, 64, 64);
+        if(g) T.push({ d:d, v:g.v, asp:g.asp });
+      }
+    });
+    return T;
+  }
+  function classifyGlyph(mask, mw, mh, allowNarrowOne){
+    if(!digitTemplates) digitTemplates = buildDigitTemplates();
+    const g = normGlyph(mask, mw, mh);
+    if(!g) return null;
+    if(allowNarrowOne !== false && g.asp < 0.33) return { d:1, score:1 };
+    let best = null;
+    const mean = function(v){ let s=0; for(let i=0;i<v.length;i++) s+=v[i]; return s/v.length; };
+    const ga = mean(g.v);
+    digitTemplates.forEach(function(t){
+      const ta = mean(t.v); let num = 0, da = 0, db = 0;
+      for(let i=0;i<g.v.length;i++){ const a = g.v[i]-ga, b = t.v[i]-ta; num += a*b; da += a*a; db += b*b; }
+      let c = num / Math.sqrt(da*db + 1e-6);
+      c -= 0.6*Math.abs(Math.log((g.asp+0.05)/(t.asp+0.05)));
+      if(!best || c > best.score) best = { d:t.d, score:c };
+    });
+    return best;
+  }
+
+  // ---------- чтение строки сотрудника ----------
+  function readRow(P, H, nd, anchor, pitch, lines, words){
+    const b = colPitch(H, nd);
+    const xs0 = Math.max(0, Math.floor(xOfDay(H, 0.5) - 2)), xs1 = Math.min(P.W-1, Math.ceil(xOfDay(H, nd+0.5) + 2));
+    const band = rowBand(lines, anchor.x, anchor.y, pitch, H.py[1] || 0);
+    const inner = sampleBand(P, band, xs0, xs1, 0.12, 0.9, 20);
+    const zoneDefs = [[-0.18,-0.06],[0.05,0.13],[0.9,0.96],[1.06,1.18]];
+    const zones = zoneDefs.map(function(z){ return sampleBand(P, band, xs0, xs1, z[0], z[1], 4); });
+    const w = inner.w, n = inner.n, S = inner.S, tl = P.textLevel;
+    const bg = new Float32Array(w), col = new Float32Array(n);
+    for(let i=0;i<w;i++){ for(let r=0;r<n;r++) col[r] = S[r*w+i]; bg[i] = percentile(col, 75); }
+    const strict0 = new Uint8Array(n*w);
+    for(let i=0;i<w;i++){ const thr = Math.max(30, 0.35*Math.max(1, bg[i]-tl)); for(let r=0;r<n;r++) if(bg[i]-S[r*w+i] > thr) strict0[r*w+i] = 1; }
+    // тонкий штрих может быть размазан на два столбца — объединяем соседние
+    const strict = new Uint8Array(n*w);
+    for(let r=0;r<n;r++) for(let i=0;i<w;i++){ const k = r*w+i; strict[k] = strict0[k] | (i>0 ? strict0[k-1] : 0) | (i<w-1 ? strict0[k+1] : 0); }
+    // линия сетки: тёмная у верхней границы строки (снаружи и внутри) и у нижней
+    const zfrac = zones.map(function(Z){
+      const f = new Float32Array(w);
+      for(let i=0;i<w;i++){ const thr = Math.max(18, 0.18*Math.max(1, bg[i]-tl)); let c = 0; for(let r=0;r<Z.n;r++) if(bg[i]-Z.S[r*w+i] > thr) c++; f[i] = c/Z.n; }
+      return f;
+    });
+    const line = new Uint8Array(w);
+    for(let i=0;i<w;i++) line[i] = (zfrac[0][i] >= 0.5 && zfrac[1][i] >= 0.5 && (zfrac[2][i] >= 0.5 || zfrac[3][i] >= 0.5)) ? 1 : 0;
+    const lx = new Uint8Array(w);
+    for(let i=0;i<w;i++) lx[i] = line[i] | (i>0 ? line[i-1] : 0) | (i<w-1 ? line[i+1] : 0);
+    const glyph = new Uint8Array(w);
+    for(let i=0;i<w;i++){ let c = 0; for(let r=0;r<n;r++) c += strict[r*w+i]; glyph[i] = (c/n >= 0.2 && !lx[i]) ? 1 : 0; }
+    const extOf = function(i0, i1){ let e = 0; for(let r=0;r<n;r++){ for(let i=i0;i<=i1;i++){ if(strict[r*w+i]){ e++; break; } } } return e/n; };
+    const blobs = [];
+    for(let i=0;i<w;){
+      if(glyph[i]){ let j = i; while(j+1 < w && glyph[j+1]) j++; if(extOf(i, j) >= 0.15) blobs.push([i, j]); i = j+1; }
+      else i++;
+    }
+    const cells = {};
+    blobs.forEach(function(bl){
+      const d = Math.round(dayOfX(H, xs0 + (bl[0]+bl[1])/2, nd));
+      if(d >= 1 && d <= nd) (cells[d] = cells[d] || []).push(bl);
+    });
+    const res = {}, spans = {};
+    Object.keys(cells).forEach(function(k){
+      const d = +k, bl = cells[d];
+      const i0 = Math.min.apply(null, bl.map(function(x){ return x[0]; })), i1 = Math.max.apply(null, bl.map(function(x){ return x[1]; }));
+      const X0 = xs0 + i0, h = band.bot(X0) - band.top(X0);
+      if(extOf(i0, i1) < 0.35) return;               // слишком низкий знак — не цифра
+      const span = Math.max(1, (i1 - i0 + 1) - 2);   // минус расширение на 1 px с каждой стороны
+      if(span > 1.1*b){ res[d] = 'text'; return; }   // надпись через несколько клеток («предварительно»)
+      if(span >= 0.3*h){ res[d] = '?'; spans[d] = [i0, i1]; }
+      else res[d] = 1;
+    });
+    // двузначные значения: сначала — числа, которые прочитал движок распознавания текста;
+    // если он клетку пропустил — сравниваем цифры с эталонами в полном разрешении фото
+    Object.keys(spans).forEach(function(k){
+      const d = +k, i0 = spans[d][0], i1 = spans[d][1];
+      const X0 = xs0 + i0, X1 = xs0 + i1, h = band.bot(X0) - band.top(X0);
+      const ymid = (band.top((X0+X1)/2) + band.bot((X0+X1)/2)) / 2;
+      const hit = (words||[]).filter(function(t){
+        return /^\d{1,2}$/.test(t.text) && t.x0 < X1 + 2 && t.x1 > X0 - 2 && Math.abs(t.yc - ymid) < 0.5*h && +t.text >= 2 && +t.text <= 24;
+      });
+      const two = hit.filter(function(t){ return t.text.length === 2; });
+      if(two.length){ res[d] = +two[0].text; return; }
+      const hn = Math.max(24, Math.round(0.78*h));
+      const Z = sampleBand(P, band, X0, X1 + 1, 0.12, 0.9, hn), zw = Z.w;
+      const zb = new Float32Array(zw), zc = new Float32Array(hn);
+      for(let i=0;i<zw;i++){ for(let r=0;r<hn;r++) zc[r] = Z.S[r*zw+i]; zb[i] = Math.max(bg[i0+i] || 0, percentile(zc, 75)); }
+      const m0 = new Uint8Array(hn*zw), cols = new Uint8Array(zw);
+      for(let i=0;i<zw;i++){
+        if(lx[i0+i]) continue; // линии сетки не трогаем
+        const thr = Math.max(30, 0.35*Math.max(1, zb[i]-tl));
+        for(let r=0;r<hn;r++) if(zb[i]-Z.S[r*zw+i] > thr){ m0[r*zw+i] = 1; cols[i] = 1; }
+      }
+      let groups = [];
+      for(let i=0;i<zw;){ if(cols[i]){ let j = i; while(j+1 < zw && cols[j+1]) j++; groups.push([i, j]); i = j+1; } else i++; }
+      const rowsOf = function(g){ let e = 0; for(let r=0;r<hn;r++){ for(let i=g[0];i<=g[1];i++){ if(m0[r*zw+i]){ e++; break; } } } return e/hn; };
+      groups = groups.filter(function(g){ return rowsOf(g) >= 0.3; });
+      while(groups.length > 2){ // склеиваем по наименьшему промежутку
+        let bi = 0, bgap = 1e9;
+        for(let q=0;q<groups.length-1;q++){ const gap = groups[q+1][0]-groups[q][1]; if(gap < bgap){ bgap = gap; bi = q; } }
+        groups.splice(bi, 2, [groups[bi][0], groups[bi+1][1]]);
+      }
+      let str = '';
+      groups.forEach(function(g, gi){
+        const gw = g[1]-g[0]+1, m = new Uint8Array(gw*hn);
+        for(let r=0;r<hn;r++) for(let i=0;i<gw;i++) m[r*gw+i] = m0[r*zw + g[0] + i];
+        const cl = classifyGlyph(m, gw, hn, gi === 0);
+        if(cl) str += cl.d;
+      });
+      const v = parseInt(str, 10);
+      res[d] = (v >= 2 && v <= 24) ? v : '?';
+    });
+    return { days:res, band:band, xs0:xs0, xs1:xs1 };
+  }
+
+  // ---------- поиск сотрудника по ФИО ----------
+  function normRu(s){ return String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^а-яa-z]/g,''); }
+  function lev(a, b){
+    const m = a.length, n = b.length; if(!m) return n; if(!n) return m;
+    let prev = new Array(n+1), cur = new Array(n+1);
+    for(let j=0;j<=n;j++) prev[j] = j;
+    for(let i=1;i<=m;i++){
+      cur[0] = i;
+      for(let j=1;j<=n;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1] + (a[i-1]===b[j-1] ? 0 : 1));
+      const t = prev; prev = cur; cur = t;
+    }
+    return prev[n];
+  }
+  function sim(a, b){ if(!a || !b) return 0; return 1 - lev(a, b)/Math.max(a.length, b.length); }
+  function findPerson(words, fio){
+    const parts = String(fio||'').trim().split(/\s+/).map(normRu).filter(Boolean);
+    if(!parts.length) return null;
+    const sur = parts[0], first = parts[1] || '';
+    const ws = words.map(function(w){ return Object.assign({ n:normRu(w.text) }, w); }).filter(function(w){ return w.n.length >= 2 && /[а-я]/.test(w.n); });
+    let best = null;
+    ws.forEach(function(w){
+      let s1 = sim(w.n, sur);
+      if(sur.length >= 5 && w.n.length >= 5 && w.n.slice(0,5) === sur.slice(0,5)) s1 = Math.max(s1, 0.8);
+      if(s1 < 0.6) return;
+      let s2 = first ? 0 : 0.6, firstWord = '';
+      ws.forEach(function(o){
+        if(o === w || Math.abs(o.yc - w.yc) > 0.6*Math.max(w.h, o.h) || o.x0 <= w.x0 || o.x0 - w.x1 > 12*w.h) return;
+        let s = sim(o.n, first);
+        if(first && o.n.length <= 2 && o.n[0] === first[0]) s = Math.max(s, 0.7); // инициал «В.»
+        if(s > s2){ s2 = s; firstWord = o.text; }
+      });
+      const score = s1 + s2;
+      if(!best || score > best.score) best = { score:score, s1:s1, s2:s2, x:w.xc, y:w.yc, label:(w.text + (firstWord ? ' ' + firstWord : '')) };
+    });
+    if(!best || best.s1 < 0.6 || (first && best.s2 < 0.55)) return null;
+    return best;
+  }
+
+  // ---------- месяц и год ----------
+  function detectMonth(words, H, maxDay){
+    const now = new Date();
+    const names = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+    let nameM = -1, nameScore = 0, year = null;
+    words.forEach(function(w){
+      const t = normRu(w.text);
+      names.forEach(function(nm, i){
+        const s = t.length >= 3 ? sim(t, nm) : 0;
+        if(s > nameScore && s >= (nm.length <= 4 ? 0.99 : 0.72)){ nameScore = s; nameM = i; }
+      });
+      const y = String(w.text).match(/\b(20\d\d)\b/);
+      if(y) year = +y[1];
+    });
+    // день недели 1-го числа по подписям «пн вт ср…» под номерами дней
+    const wdNames = ['пн','вт','ср','чт','пт','сб','вс'];
+    const votes = [0,0,0,0,0,0,0];
+    words.forEach(function(w){
+      const idx = wdNames.indexOf(normRu(w.text));
+      if(idx < 0 || !H) return;
+      const d = Math.round(dayOfX(H, w.xc, 31));
+      if(d >= 1 && d <= 31) votes[((idx - (d-1)) % 7 + 7) % 7]++;
+    });
+    const vmax = Math.max.apply(null, votes), wd1 = vmax >= 2 ? votes.indexOf(vmax) : -1;
+    let best = null;
+    for(let k=-12;k<=12;k++){
+      const dt = new Date(now.getFullYear(), now.getMonth()+k, 1), m = dt.getMonth(), y = dt.getFullYear();
+      let s = 0;
+      if(m === nameM) s += 3;
+      if(year && y === year) s += 1.5;
+      if(wd1 >= 0 && ((dt.getDay()+6) % 7) === wd1) s += 2;
+      if(maxDay >= 28 && daysInMonth(y, m) === maxDay) s += 1;
+      s -= Math.abs(k)*0.01 + (k < 0 ? 0.005 : 0); // при равенстве — ближайший, лучше будущий
+      if(!best || s > best.s) best = { s:s, m:m, y:y };
+    }
+    const dtB = new Date(best.y, best.m, 1);
+    const sure = best.m === nameM || (wd1 >= 0 && ((dtB.getDay()+6) % 7) === wd1 && maxDay >= 28 && daysInMonth(best.y, best.m) === maxDay);
+    return { month:best.m, year:best.y, sure:sure };
+  }
+
+  // ---------- превью строки для проверки ----------
+  function rowPreview(P, H, nd, row, days){
+    const hb = H.h, xs0 = row.xs0, xs1 = row.xs1;
+    const header = { top:function(x){ return polyval(H.py, x) - 0.9*hb; }, bot:function(x){ return polyval(H.py, x) + 0.9*hb; } };
+    const rh = Math.round(Math.max(16, row.band.bot(xs0) - row.band.top(xs0)) * 1.2);
+    const hh = Math.round(1.8*hb);
+    const A = sampleBand(P, header, xs0, xs1, 0, 1, hh), B = sampleBand(P, row.band, xs0, xs1, -0.1, 1.1, rh);
+    const w = xs1 - xs0, target = 44, sc = target / Math.max(hh, rh);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w*sc)); c.height = Math.round((hh + rh)*sc) + 4;
+    const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = hh + rh + 4;
+    const tctx = tmp.getContext('2d'); const id = tctx.createImageData(w, hh + rh + 4);
+    const put = function(Z, off){ for(let r=0;r<Z.n;r++) for(let i=0;i<w;i++){ const v = Z.S[r*w+i]; const k = ((r+off)*w + i)*4; id.data[k] = id.data[k+1] = id.data[k+2] = v; id.data[k+3] = 255; } };
+    put(A, 0); put(B, hh + 4);
+    for(let i=0;i<w;i++) for(let r=hh;r<hh+4;r++){ const k = (r*w+i)*4; id.data[k] = 255; id.data[k+1] = 149; id.data[k+2] = 0; id.data[k+3] = 255; }
+    tctx.putImageData(id, 0, 0);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(tmp, 0, 0, c.width, c.height);
+    // отметки найденных смен под строкой
+    Object.keys(days).forEach(function(k){
+      const d = +k, x = (xOfDay(H, d) - xs0) * sc;
+      ctx.fillStyle = days[d] === '?' ? '#FF9500' : '#39FF14';
+      ctx.fillRect(x - 6, c.height - 3, 12, 3);
+    });
+    return c.toDataURL('image/jpeg', 0.85);
+  }
+
+  // ---------- весь процесс ----------
+  async function processImport(file){
+    const run = ++impRun;
+    const p = impProfile();
+    imp = { stage:'loading', msg:'Открываю фото…', pct:0, result:null, pickUrl:null, error:null };
+    render();
+    try{
+      const img = await loadImageFromFile(file);
+      if(run !== impRun) return;
+      const P = prepImage(img);
+      imp.msg = 'Загружаю модуль распознавания…'; render();
+      await ensureTesseract();
+      if(run !== impRun) return;
+      const words = await runOCR(P.canvas, run);
+      if(run !== impRun) return;
+      imp.msg = 'Ищу твою строку в таблице…'; imp.pct = 100; render();
+      await new Promise(function(r){ setTimeout(r, 30); });
+      const H = fitHeader(words, P.W);
+      if(!H) throw new Error('Не нашёл на фото шапку с номерами дней. Сфотографируй таблицу ровнее и так, чтобы строка с числами месяца попала в кадр.');
+      const mon = detectMonth(words, H, H.maxDay);
+      const nd = daysInMonth(mon.year, mon.month);
+      const b = colPitch(H, nd);
+      const xStart = Math.max(0, xOfDay(H, 0.5) - 12*b);
+      const lines = trackLines(P, xStart, Math.min(P.W, xOfDay(H, nd+0.5) + 2), H.py[1] || 0, Math.max(10, Math.round(2*b)));
+      const pitch = estimatePitch(lines, xOfDay(H, 1), b) || 1.8*H.h;
+      impData = { P:P, words:words, H:H, nd:nd, lines:lines, pitch:pitch, month:mon };
+      const who = findPerson(words, p.fio);
+      if(!who){
+        // не нашли — просим показать строку на фото
+        imp.stage = 'pick';
+        imp.pickUrl = P.canvas.toDataURL('image/jpeg', 0.8);
+        imp.pickRatio = P.W / P.H;
+        render();
+        return;
+      }
+      finishImport({ x:who.x, y:who.y }, who.label, false);
+    }catch(e){
+      if(run !== impRun) return;
+      let msg = (e && e.message) || '';
+      if(msg === 'image') msg = 'Не удалось открыть фото. Попробуй другое.';
+      else if(msg === 'no Tesseract' || msg.indexOf('xlsx') === 0 || msg === 'start' || /load|fetch|network|Failed/i.test(msg)) msg = 'Не удалось загрузить модуль распознавания. Проверь интернет и попробуй ещё раз (нужен только при первом использовании).';
+      else if(!/[а-я]/i.test(msg)) msg = 'Не получилось разобрать фото. Попробуй снять таблицу ровнее и крупнее.';
+      imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
+      impData = null;
+      showAlert(msg);
+    }
+  }
+  function finishImport(anchor, label, manual){
+    const D = impData; if(!D) return;
+    const row = readRow(D.P, D.H, D.nd, anchor, D.pitch, D.lines, D.words);
+    const days = {};
+    Object.keys(row.days).forEach(function(k){ if(row.days[k] !== 'text') days[+k] = row.days[k]; });
+    const orig = Object.assign({}, days);
+    let preview = null;
+    try{ preview = rowPreview(D.P, D.H, D.nd, row, days); }catch(e){}
+    imp = { stage:'review', msg:'', pct:0, pickUrl:null, error:null, result:{
+      month:D.month.month, year:D.month.year, monthSure:D.month.sure, days:days, orig:orig, label:label, manual:manual, preview:preview
+    } };
+    // картинка больше не нужна — освобождаем память
+    impData = null;
+    render();
+  }
+
+  // ---------- интерфейс ----------
+  function renderImportCard(){
+    const p = impProfile();
+    const pc = (getWorkplace(p.importWp)||{}).color || '#39FF14';
+    let html = '<div class="settings open imp-card" style="--focus:'+pc+';border-color:'+hexA(pc,0.35)+';">';
+    html += '  <div class="section-title">Импорт графика с фото</div>';
+    if(imp.stage === 'loading'){
+      html += '  <div class="imp-status">'+esc(imp.msg||'Работаю…')+'</div>';
+      html += '  <div class="imp-bar"><div style="width:'+Math.max(4, Math.min(100, imp.pct||0))+'%;background:'+pc+';box-shadow:0 0 10px '+pc+';"></div></div>';
+      html += '  <div class="imp-hint">Фото обрабатывается прямо на телефоне и никуда не отправляется.</div>';
+      html += '  <div class="choice" style="margin-top:12px;color:var(--muted);text-align:center;" onclick="WC.importCancel()">Отмена</div>';
+    } else if(imp.stage === 'pick'){
+      html += '  <div class="imp-status">Не нашёл «'+esc(p.fio)+'» на фото. Нажми на свою фамилию на снимке.</div>';
+      html += '  <div class="imp-pick"><img src="'+imp.pickUrl+'" alt="Фото графика" onclick="WC.importPick(event)"></div>';
+      html += '  <div class="choice" style="margin-top:12px;color:var(--muted);text-align:center;" onclick="WC.importCancel()">Отмена</div>';
+    } else if(imp.stage === 'review' && imp.result){
+      html += renderImportReview(p, pc);
+    } else {
+      html += '  <div class="imp-hint" style="margin-top:0;margin-bottom:12px;">Сфотографируй общий график коллектива — приложение найдёт в нём твою строку и перенесёт смены в календарь. «1» в клетке — смена, другие числа — количество часов.</div>';
+      html += '  <div class="field"><label>Фамилия Имя Отчество (как в графике)</label><input type="text" autocomplete="name" autocapitalize="words" enterkeyhint="done" id="impFio" placeholder="Например: Иванов Иван Иванович" value="'+esc(p.fio)+'" oninput="WC.importEdit(\'fio\', this.value)"></div>';
+      html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
+      activeWorkplaces().forEach(function(w){
+        const a = p.importWp === w.id;
+        html += '<div class="choice'+(a?' active':'')+'" style="color:'+w.color+(a?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.importSet(\'importWp\',\''+w.id+'\')">'+esc(w.name)+'</div>';
+      });
+      html += '  </div></div>';
+      html += '  <div class="field"><label>Часов в смене, где стоит «1»</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
+      html += '  <div class="field"><label>Дни без смены</label><div class="choice-row">';
+      [['keep','Не трогать'],['off','Отметить выходными']].forEach(function(o){
+        const a = p.importOff === o[0];
+        html += '<div class="choice'+(a?' active':'')+'" style="color:'+pc+(a?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.importSet(\'importOff\',\''+o[0]+'\')">'+o[1]+'</div>';
+      });
+      html += '  </div></div>';
+      html += '  <input type="file" id="impFile" accept="image/*" style="display:none" onchange="WC.importFile(this.files && this.files[0]); this.value=\'\';">';
+      html += '  <div class="choice active" style="margin-top:6px;text-align:center;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';" onclick="WC.importChoose()">Загрузить фото графика</div>';
+      html += '  <div class="imp-hint">Работает без интернета, кроме самого первого раза: тогда один раз скачивается модуль распознавания русского текста (около 10–15 МБ).</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function impDayLabel(v){ return v===undefined ? 'нет смены' : (v===1 ? 'смена' : (v==='?' ? 'смена, часы не распознаны' : numText(v)+' ч')); }
+  function impGridHtml(R, pc){
+    const nd = daysInMonth(R.year, R.month);
+    let html = '<div class="weekdays">'+WEEKDAYS.map(function(w){ return '<div>'+w+'</div>'; }).join('')+'</div>';
+    html += '<div class="grid imp-grid">';
+    const lead = leadingBlanks(R.year, R.month);
+    for(let i=0;i<lead;i++) html += '<div class="day blank"></div>';
+    for(let d=1; d<=nd; d++){
+      const v = R.days[d];
+      let label = '', style = '';
+      if(v === 1){ label = 'смена'; style = 'color:'+pc+';box-shadow:0 0 0 1.5px '+pc+' inset;background:'+pc+'1f;'; }
+      else if(v === '?'){ label = '?'; style = 'color:#FF9500;box-shadow:0 0 0 1.5px #FF9500 inset;background:#FF95001f;'; }
+      else if(typeof v === 'number'){ label = numText(v)+' ч'; style = 'color:'+pc+';box-shadow:0 0 0 1.5px '+pc+' inset;background:'+pc+'1f;'; }
+      const sel = R.sel === d ? 'outline:2px solid var(--text);outline-offset:-2px;' : '';
+      html += '<div class="day" style="min-height:40px;'+style+sel+'" onclick="WC.importToggle('+d+')"><div class="num">'+d+'</div><div class="amt" style="color:inherit;">'+label+'</div></div>';
+    }
+    return html + '</div>';
+  }
+  function impCountHtml(R){
+    let cntShift = 0, cntHours = 0, cntQ = 0;
+    Object.keys(R.days).forEach(function(k){ const v = R.days[k]; if(v === 1) cntShift++; else if(v === '?') cntQ++; else if(typeof v === 'number') cntHours++; });
+    const total = cntShift + cntHours + cntQ;
+    return 'Смен: '+total+(cntHours?' · с часами: '+cntHours:'')+(cntQ?' · <span style="color:#FF9500;">часы не распознаны: '+cntQ+' — проверь их или будут записаны как обычные смены</span>':'')+'. Нажми на день, чтобы поправить.';
+  }
+
+  function renderImportReview(p, pc){
+    const R = imp.result, nd = daysInMonth(R.year, R.month);
+    let html = '';
+    html += '  <div class="imp-status">Нашёл строку: <b>'+esc(R.label)+'</b>'+(R.manual?' (указана вручную)':'')+'</div>';
+    if(R.preview) html += '  <div class="imp-preview"><img src="'+R.preview+'" alt="Строка из фото"></div><div class="imp-hint" style="margin-top:4px;">Сверху — числа месяца с фото, снизу — твоя строка. Зелёные метки — найденные смены.</div>';
+    html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px;">';
+    html += '    <div class="nav-btn" onclick="WC.importMonth(-1)">‹</div>';
+    html += '    <div style="font-size:15px;font-weight:600;">'+MONTHS[R.month]+' '+R.year+(R.monthSure?'':' <span style="color:#FF9500;font-size:12px;">— проверь месяц</span>')+'</div>';
+    html += '    <div class="nav-btn" onclick="WC.importMonth(1)">›</div>';
+    html += '  </div>';
+    html += '  <div id="impGridWrap">'+impGridHtml(R, pc)+'</div>';
+    if(R.sel){
+      const v = R.days[R.sel];
+      html += '  <div class="imp-day-edit">';
+      html += '    <div style="font-size:13px;margin-bottom:8px;">'+R.sel+' '+MONTHS_GEN[R.month]+': <b id="impDayLabel">'+impDayLabel(v)+'</b></div>';
+      html += '    <div style="display:flex;gap:8px;align-items:center;">';
+      html += '      <div class="choice" style="flex:1;min-width:0;color:var(--muted);text-align:center;" onclick="WC.importDaySet('+R.sel+', null)">Нет смены</div>';
+      html += '      <div class="choice" style="flex:1;min-width:0;color:'+pc+';text-align:center;" onclick="WC.importDaySet('+R.sel+', 1)">Смена</div>';
+      html += '      <input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impDayHours" placeholder="ч" value="'+(typeof v==='number'&&v>1?numText(v):'')+'" oninput="WC.importDayHours(this.value)" style="width:72px;flex:none;font-size:16px;padding:9px 10px;border-radius:12px;border:1px solid var(--border);background:var(--panel-alt);color:var(--text);">';
+      html += '    </div>';
+      html += '  </div>';
+    }
+    html += '  <div class="imp-hint" id="impCount" style="margin-top:10px;">'+impCountHtml(R)+'</div>';
+    html += '  <div class="field" style="margin-top:12px;"><label>Место работы</label><div class="choice-row">';
+    activeWorkplaces().forEach(function(w){
+      const a = p.importWp === w.id;
+      html += '<div class="choice'+(a?' active':'')+'" style="color:'+w.color+(a?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.importSet(\'importWp\',\''+w.id+'\')">'+esc(w.name)+'</div>';
+    });
+    html += '  </div></div>';
+    html += '  <div class="field"><label>Часов в смене, где стоит «1»</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours2" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
+    html += '  <div class="confirm-actions" style="margin-top:14px;">';
+    html += '    <div class="confirm-btn cancel" onclick="WC.importCancel()">Отмена</div>';
+    html += '    <div class="confirm-btn ok" style="background:'+pc+';border-color:'+pc+';box-shadow:0 0 12px '+hexA(pc,0.5)+';" onclick="WC.importApply()">Записать смены</div>';
+    html += '  </div>';
+    return html;
+  }
+
+  const importActions = {
+    importChoose(){
+      const p = impProfile();
+      if(!normRu(p.fio)){ showAlert('Сначала впиши фамилию и имя — так, как они написаны в графике.'); return; }
+      if(!p.importWp){ showAlert('Сначала добавь место работы в настройках.'); return; }
+      const el = document.getElementById('impFile'); if(el) el.click();
+    },
+    importFile(file){ if(file) processImport(file); },
+    importEdit(key, value){
+      const p = impProfile();
+      if(key === 'importHours'){ const n = parseNum(value); if(n > 0) p.importHours = n; }
+      else p[key] = value;
+      scheduleSave();
+    },
+    importSet(key, value){
+      const p = impProfile();
+      if(key === 'importHours'){ const v = parseFloat(value); p.importHours = v > 0 ? v : p.importHours; }
+      else p[key] = value;
+      saveState(); render();
+    },
+    importCancel(){
+      impRun++;
+      if(impWorker){ try{ impWorker.terminate(); }catch(e){} impWorker = null; }
+      imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
+      impData = null;
+      render();
+    },
+    importPick(ev){
+      if(!impData) return;
+      const r = ev.target.getBoundingClientRect();
+      const x = (ev.clientX - r.left) / r.width * impData.P.W, y = (ev.clientY - r.top) / r.height * impData.P.H;
+      finishImport({ x:x, y:y }, 'строка по твоему нажатию', true);
+    },
+    importMonth(dir){
+      const R = imp.result; if(!R) return;
+      R.month += dir; if(R.month < 0){ R.month = 11; R.year--; } if(R.month > 11){ R.month = 0; R.year++; }
+      R.monthSure = true;
+      const nd = daysInMonth(R.year, R.month);
+      Object.keys(R.days).forEach(function(k){ if(+k > nd) delete R.days[k]; });
+      render();
+    },
+    importToggle(d){
+      const R = imp.result; if(!R) return;
+      if(R.sel === d){ R.sel = null; render(); return; }
+      R.sel = d;
+      if(R.days[d] === undefined) R.days[d] = 1;   // нажатие на пустой день — сразу ставим смену
+      render();
+    },
+    importDaySet(d, v){
+      const R = imp.result; if(!R) return;
+      if(v === null) delete R.days[d]; else R.days[d] = v;
+      render();
+    },
+    importDayHours(val){
+      const R = imp.result; if(!R || !R.sel) return;
+      const v = parseNum(val);
+      if(v > 1 && v <= 24) R.days[R.sel] = v;
+      else if(String(val).trim() === '') R.days[R.sel] = 1;
+      else return;
+      const p = impProfile(), pc = (getWorkplace(p.importWp)||{}).color || '#39FF14';
+      const g = document.getElementById('impGridWrap'); if(g) g.innerHTML = impGridHtml(R, pc);
+      const l = document.getElementById('impDayLabel'); if(l) l.textContent = impDayLabel(R.days[R.sel]);
+      const n = document.getElementById('impCount'); if(n) n.innerHTML = impCountHtml(R);
+    },
+    importApply(){
+      const R = imp.result, p = impProfile(); if(!R) return;
+      const nd = daysInMonth(R.year, R.month);
+      let added = 0, skipped = 0;
+      for(let d=1; d<=nd; d++){
+        const k = dateKey(R.year, R.month, d), cur = state.shifts[k], v = R.days[d];
+        if(v !== undefined){
+          if(cur && cur.workplaceId && cur.workplaceId !== p.importWp){ skipped++; continue; } // день уже занят другой работой
+          state.shifts[k] = { workplaceId:p.importWp, hours:(typeof v === 'number' && v > 1) ? v : p.importHours, dayOff:false };
+          added++;
+        } else if(p.importOff === 'off' && !cur){
+          state.shifts[k] = { dayOff:true };
+        }
+      }
+      saveState();
+      imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
+      view.year = R.year; view.month = R.month; selectedDate = null;
+      showFlash('✓ Добавлено смен: '+added + (skipped ? ' · пропущено '+skipped+' (там уже другая работа)' : ''));
+      WC.switchTab('calendar');
+    },
+    _importDebug(){ return imp; }
+  };
+
   window.WC = {
     shiftMonth(dir){
       view.month += dir;
@@ -1850,8 +2732,13 @@
     applyUpdate(){ applyUpdate(); },
     dismissUpdate(){ updateInfo.dismissed = true; render(); },
     switchTab(tab){
+      if(tab === 'pattern' && currentTab !== 'pattern'){
+        patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
+        const pw = getWorkplace(patternForm.workplaceId);
+        if(!pw || pw.archived){ const aw = activeWorkplaces()[0]; if(aw) patternForm.workplaceId = aw.id; }
+      }
       currentTab = tab;
-      if(tab !== 'calendar'){ rangeMode=false; rangeStart=null; rangeEnd=null; patternOpen=false; }
+      if(tab !== 'calendar'){ rangeMode=false; rangeStart=null; rangeEnd=null; }
       render();
       if(tab === 'reports') setTimeout(function(){ ensureXLSX().catch(function(){}); }, 800);
     },
@@ -1891,9 +2778,10 @@
     },
     cancelPaymentForm(){ paymentFormState = null; render(); },
     setPaymentField(key, value){ if(!paymentFormState) return; paymentFormState[key] = value; render(); },
+    editPayment(key, value){ if(paymentFormState) paymentFormState[key] = value; },
     savePayment(){
       if(!paymentFormState) return;
-      const amt = parseFloat(paymentFormState.amount);
+      const amt = parseNum(paymentFormState.amount);
       if(!amt || amt<=0){ showAlert('Укажи сумму больше нуля.'); return; }
       if(!Array.isArray(state.payments)) state.payments = [];
       state.payments.push({
@@ -1937,23 +2825,21 @@
       state.workplaces.forEach(w=> sheets.push({ name: w.name, rows: buildWorkplaceRows(w.id, exportForm.from, exportForm.to) }));
       exportWorkbook(sheets, 'Табель-полный_'+exportForm.from+'_'+exportForm.to+'.xlsx');
     },
-    togglePattern(){
-      if(!patternOpen){
-        patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
-        const pw = getWorkplace(patternForm.workplaceId);
-        if(!pw || pw.archived){ const aw = activeWorkplaces()[0]; if(aw) patternForm.workplaceId = aw.id; }
-        rangeMode=false; rangeStart=null; rangeEnd=null;
-      }
-      patternOpen = !patternOpen;
-      render();
-    },
     setPatternField(key, value){
       if(key==='workDays' || key==='offDays' || key==='hours'){
-        patternForm[key] = value==='' ? '' : parseFloat(value);
+        const n = parseNum(value);
+        if(String(value).trim() === '') patternForm[key] = '';
+        else if(isFinite(n)) patternForm[key] = n;
+        else return;
+        if(key !== 'hours'){
+          const box = document.getElementById('patternPresets');
+          const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
+          if(box) box.innerHTML = patternPresetsHtml(pc);
+        }
       } else {
         patternForm[key] = value;
+        render();
       }
-      render();
     },
     setPatternPreset(w, o){ patternForm.workDays = w; patternForm.offDays = o; render(); },
     setPatternFillMode(mode){ patternForm.fillMode = mode; render(); },
@@ -1988,7 +2874,9 @@
       }
       view.year = sy; view.month = sm-1;
       selectedDate = null;
-      saveState(); render();
+      saveState();
+      showFlash('✓ Шаблон применён');
+      WC.switchTab('calendar');
     },
     selectDay(k){
       selectedDate = (selectedDate===k) ? null : k;
@@ -2007,7 +2895,6 @@
     toggleRangeMode(){
       rangeMode = !rangeMode;
       rangeStart = null; rangeEnd = null; selectedDate = null;
-      if(rangeMode){ patternOpen=false; }
       render();
     },
     resetRange(){ rangeStart = null; rangeEnd = null; render(); },
@@ -2055,14 +2942,28 @@
       if(!selectedDate) return;
       const s = state.shifts[selectedDate];
       if(!s) return;
-      s.hours = v==='' ? undefined : parseFloat(v);
-      saveState(); render();
+      const n = parseNum(v);
+      if(String(v).trim() === '') s.hours = undefined;
+      else if(isFinite(n)) s.hours = n;
+      else return;                      // промежуточный ввод («7,») — ждём следующую цифру
+      const pay = document.getElementById('editorPay');
+      if(pay) pay.innerHTML = editorPayHtml(s);
+      const amt = document.getElementById('amt-'+selectedDate);
+      if(amt){ const p = calcPay(s); amt.textContent = p > 0 ? Math.round(p).toLocaleString('ru-RU') : ''; }
+      scheduleSave();
     },
     clearDay(){
       if(!selectedDate) return;
       delete state.shifts[selectedDate];
       editorPickerOpen = false;
       saveState(); render();
+    },
+    editWp(idx, key, value){
+      const w = state.workplaces[idx];
+      if(!w) return;
+      if(key==='rate'){ const n = parseNum(value); if(String(value).trim()==='') w.rate = 0; else if(isFinite(n)) w.rate = n; else return; }
+      else w[key] = value;
+      scheduleSave();
     },
     updateWp(idx, key, value){
       const w = state.workplaces[idx];
@@ -2103,6 +3004,7 @@
           if(migrated.workplaces) state.workplaces = migrated.workplaces;
           if(migrated.shifts) state.shifts = migrated.shifts;
           state.payments = Array.isArray(migrated.payments) ? migrated.payments : [];
+          if(migrated.profile && typeof migrated.profile === 'object') state.profile = migrated.profile;
           state.version = migrated.version;
           normalizeState();
           saveState(); render();
@@ -2142,16 +3044,7 @@
     }
   };
 
-  // Закрытие открытой панели шаблона по тапу вне её области —
-  // capture-фаза, чтобы сработать раньше собственных обработчиков кликнутого элемента.
-  document.addEventListener('click', function(e){
-    if(!patternOpen) return;
-    if(e.target.closest('.settings')) return;
-    if(e.target.closest('.gear-btn')) return;
-    if(e.target.closest('.confirm-overlay')) return;
-    patternOpen = false;
-    render();
-  }, true);
+  Object.assign(window.WC, importActions);
 
   // Safari присылает отдельные события для щипка — отменяем их, чтобы экран не масштабировался
   ['gesturestart','gesturechange','gestureend'].forEach(function(ev){
@@ -2195,7 +3088,7 @@
       updateInfo.status = (from === APP_BUILD) ? 'same' : 'done';
       updateInfo.lastCheck = Date.now();
       render();
-      setTimeout(function(){ if(updateInfo.status==='done' || updateInfo.status==='same'){ updateInfo.status='uptodate'; render(); } }, 4000);
+      setTimeout(function(){ if(updateInfo.status==='done' || updateInfo.status==='same'){ updateInfo.status='uptodate'; softRender(); } }, 4000);
     }
   }
 
