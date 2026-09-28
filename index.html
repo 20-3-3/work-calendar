@@ -731,7 +731,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = '2026-09-27 · v7';
+  const APP_BUILD = 'iOS · 2026-09-27 · v9';
 
   let state = {
     version: CURRENT_VERSION,
@@ -775,6 +775,10 @@
   let paymentFormState = null; // { periodFrom, periodTo, workplaceId, amount, note }
 
   function getWorkplace(id){ return state.workplaces.find(w=>w.id===id); }
+  // Текущие места работы — только они доступны для новых смен, шаблонов и выплат
+  function activeWorkplaces(){ return state.workplaces.filter(w=>!w.archived); }
+  // В сводке показываем бывшие места работы только если за период по ним есть смены
+  function showInStats(w, t){ return !w.archived || (t && (t.days>0 || t.pay>0)); }
 
   // Сезонный неоновый цвет для названия месяца: зима — сине-голубой, весна — розовый,
   // лето — зелёный, осень — оранжевый (m: 0=январь ... 11=декабрь)
@@ -882,16 +886,18 @@
   }
 
   function normalizeState(){
-    let list = Array.isArray(state.workplaces) ? state.workplaces.slice(0, 10) : [];
+    // Бывшие места работы (archived) хранятся всегда — лимит 10 касается только текущих
+    let list = Array.isArray(state.workplaces) ? state.workplaces.slice() : [];
     list = list.map((w,i)=>({
       id: w && w.id ? w.id : ('w'+(i+1)),
       name: w && w.name ? w.name : ('Работа '+(i+1)),
       color: w && w.color ? w.color : SWATCH_COLORS[i % SWATCH_COLORS.length],
       payType: (w && w.payType==='daily') ? 'daily' : 'hourly',
       rate: (w && typeof w.rate==='number') ? w.rate : (parseFloat(w && w.rate) || 0),
-      currency: (w && w.currency) ? w.currency : '₽'
+      currency: (w && w.currency) ? w.currency : '₽',
+      archived: !!(w && w.archived)
     }));
-    if(list.length === 0){
+    if(!list.some(w=>!w.archived)){
       list.push({ id:'w1', name:'Работа 1', color:SWATCH_COLORS[0], payType:'hourly', rate:0, currency:'₽' });
     }
     state.workplaces = list;
@@ -1078,7 +1084,7 @@
     html += '    <div class="field"><label>Сумма</label><input type="number" min="0" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.setPaymentField(\'amount\', this.value)"></div>';
     html += '    <div class="field"><label>Место работы (необязательно)</label><div class="choice-row">';
     html += '      <div class="choice'+(f.workplaceId===''?' active':'')+'" style="color:var(--teal)'+(f.workplaceId===''?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPaymentField(\'workplaceId\',\'\')">Все</div>';
-    state.workplaces.forEach(w=>{
+    activeWorkplaces().forEach(w=>{
       const active = f.workplaceId===w.id;
       html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPaymentField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
     });
@@ -1281,11 +1287,12 @@
     html += '    <div class="total-sub">'+ms.totalShifts+' смен · '+ms.totalHours+' ч · '+ms.totalOff+' вых.</div>';
     state.workplaces.forEach(w=>{
       const t = ms.wpStats[w.id] || {pay:0,hours:0,days:0};
+      if(!showInStats(w,t)) return;
       const pct = ms.totalPay>0 ? Math.round((t.pay/ms.totalPay)*100) : 0;
       html += '    <div class="wp-row">';
       html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
       html += '      <div class="wp-info">';
-      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
+      html += '        <div class="wp-name">'+esc(w.name)+(w.archived?' <span style="color:var(--muted)">(бывшее)</span>':'')+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
       html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
       html += '      </div>';
       html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
@@ -1366,11 +1373,12 @@
     html += '    <div class="total-sub">'+ys.totalShifts+' смен · '+ys.totalHours+' ч · '+ys.totalOff+' вых. за год</div>';
     state.workplaces.forEach(w=>{
       const t = ys.wpStats[w.id] || {pay:0,hours:0,days:0};
+      if(!showInStats(w,t)) return;
       const pct = ys.totalPay>0 ? Math.round((t.pay/ys.totalPay)*100) : 0;
       html += '    <div class="wp-row">';
       html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
       html += '      <div class="wp-info">';
-      html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
+      html += '        <div class="wp-name">'+esc(w.name)+(w.archived?' <span style="color:var(--muted)">(бывшее)</span>':'')+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
       html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
       html += '      </div>';
       html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
@@ -1424,7 +1432,7 @@
 
     if(showPicker){
       html += '  <div class="choice-row">';
-      state.workplaces.forEach(w=>{
+      activeWorkplaces().forEach(w=>{
         const active = s.workplaceId === w.id;
         html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.pickWorkplace(\''+w.id+'\')">'+esc(w.name)+'</div>';
       });
@@ -1477,11 +1485,12 @@
       html += '    <div class="total-sub">'+stats.totalShifts+' смен · '+stats.totalHours+' ч · '+stats.totalOff+' вых.</div>';
       state.workplaces.forEach(w=>{
         const t = stats.wpStats[w.id] || {pay:0,hours:0,days:0};
+        if(!showInStats(w,t)) return;
         const pct = stats.totalPay>0 ? Math.round((t.pay/stats.totalPay)*100) : 0;
         html += '    <div class="wp-row">';
         html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
         html += '      <div class="wp-info">';
-        html += '        <div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
+        html += '        <div class="wp-name">'+esc(w.name)+(w.archived?' <span style="color:var(--muted)">(бывшее)</span>':'')+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
         html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
         html += '      </div>';
         html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
@@ -1506,7 +1515,7 @@
     html += '  <div class="section-title">График по шаблону</div>';
 
     html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
-    state.workplaces.forEach(w=>{
+    activeWorkplaces().forEach(w=>{
       const active = patternForm.workplaceId === w.id;
       html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPatternField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
     });
@@ -1554,11 +1563,15 @@
     html += '  </div>';
 
     html += '  <div class="section-title">Места работы</div>';
+    const activeCount = activeWorkplaces().length;
+    let n = 0;
     state.workplaces.forEach((w,idx)=>{
+      if(w.archived) return;
+      n++;
       html += '  <div class="wp-edit">';
       html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
-      html += '      <span style="font-size:11px;color:var(--muted);">Место работы '+(idx+1)+'</span>';
-      if(state.workplaces.length > 1){
+      html += '      <span style="font-size:11px;color:var(--muted);">Место работы '+n+'</span>';
+      if(activeCount > 1){
         html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
       }
       html += '    </div>';
@@ -1579,10 +1592,22 @@
       html += '    </div></div>';
       html += '  </div>';
     });
-    if(state.workplaces.length < 10){
+    if(activeCount < 10){
       html += '  <div class="choice" style="text-align:center;color:var(--amber);box-shadow:none;margin-top:4px;" onclick="WC.addWorkplace()">+ Добавить место работы</div>';
     } else {
       html += '  <div style="text-align:center;color:var(--muted);font-size:12px;margin-top:4px;">Достигнут лимит — 10 мест работы</div>';
+    }
+
+    const archived = state.workplaces.filter(w=>w.archived);
+    if(archived.length){
+      html += '  <div class="section-title" style="margin-top:20px;">Бывшие места работы</div>';
+      html += '  <div style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.4;">Отработанные смены и заработок сохранены в календаре и отчётах. Новые смены сюда поставить нельзя.</div>';
+      html += '  <div style="display:flex;flex-direction:column;gap:8px;">';
+      archived.forEach(w=>{
+        const cnt = Object.keys(state.shifts).filter(k=> state.shifts[k] && state.shifts[k].workplaceId===w.id).length;
+        html += '    <div class="week-item"><span class="wl" style="color:var(--text);"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>'+esc(w.name)+' <span style="color:var(--muted)">· '+cnt+' смен</span></span><span class="clear-btn" style="color:var(--teal);" onclick="WC.restoreWorkplace(\''+w.id+'\')">Вернуть</span></div>';
+      });
+      html += '  </div>';
     }
 
     html += '  <div class="section-title" style="margin-top:20px;">Резервная копия</div>';
@@ -1713,6 +1738,8 @@
     togglePattern(){
       if(!patternOpen){
         patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
+        const pw = getWorkplace(patternForm.workplaceId);
+        if(!pw || pw.archived){ const aw = activeWorkplaces()[0]; if(aw) patternForm.workplaceId = aw.id; }
         rangeMode=false; rangeStart=null; rangeEnd=null;
       }
       patternOpen = !patternOpen;
@@ -1882,7 +1909,7 @@
       reader.readAsText(file);
     },
     addWorkplace(){
-      if(state.workplaces.length >= 10){ showAlert('Максимум 10 мест работы.'); return; }
+      if(activeWorkplaces().length >= 10){ showAlert('Максимум 10 текущих мест работы.'); return; }
       const idx = state.workplaces.length;
       state.workplaces.push({
         id: 'w'+Date.now(),
@@ -1895,16 +1922,21 @@
       saveState(); render();
     },
     removeWorkplace(idx){
-      if(state.workplaces.length <= 1){ showAlert('Должно остаться хотя бы одно место работы.'); return; }
+      if(activeWorkplaces().length <= 1){ showAlert('Должно остаться хотя бы одно текущее место работы.'); return; }
       const w = state.workplaces[idx];
       if(!w) return;
-      askConfirm('Удалить «'+w.name+'»? Все смены, отмеченные для этого места работы, тоже будут очищены.', function(){
-        Object.keys(state.shifts).forEach(k=>{ if(state.shifts[k] && state.shifts[k].workplaceId===w.id) delete state.shifts[k]; });
-        const i = state.workplaces.indexOf(w);
-        if(i>-1) state.workplaces.splice(i,1);
-        if(patternForm.workplaceId === w.id && state.workplaces[0]){ patternForm.workplaceId = state.workplaces[0].id; }
+      askConfirm('Убрать «'+w.name+'» из текущих мест работы? Все отработанные смены и заработок останутся в календаре и отчётах — работа переедет в «Бывшие места работы», откуда её можно вернуть.', function(){
+        w.archived = true;
+        if(patternForm.workplaceId === w.id){ const a = activeWorkplaces()[0]; if(a) patternForm.workplaceId = a.id; }
         saveState(); render();
-      });
+      }, 'Убрать');
+    },
+    restoreWorkplace(id){
+      const w = getWorkplace(id);
+      if(!w) return;
+      if(activeWorkplaces().length >= 10){ showAlert('Уже 10 текущих мест работы — сначала убери одно из них.'); return; }
+      w.archived = false;
+      saveState(); render();
     }
   };
 
