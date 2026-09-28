@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -66,6 +66,11 @@
 
   *{ box-sizing: border-box; }
   html,body{ margin:0; padding:0; }
+  /* Как в приложении, а не на сайте: экран не масштабируется двумя пальцами и двойным тапом,
+     текст интерфейса не выделяется долгим нажатием и не всплывает системное меню. */
+  html{ touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body{ -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  input, textarea{ -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   /* iOS (веб-приложение на экране «Домой» с прозрачной строкой состояния): если страница короче
      экрана, закреплённая снизу панель поднимается на высоту строки состояния. Поэтому документ
      всегда заполняет экран целиком — тогда панель стоит на одной высоте во всех вкладках. */
@@ -261,7 +266,7 @@
     color: var(--text);
     border-radius: 7px;
     padding: 8px 10px;
-    font-size: 14px;
+    font-size: 16px;
     width: 80px;
     font-family:'IBM Plex Mono', monospace;
   }
@@ -391,7 +396,7 @@
     color: var(--text);
     border-radius: 7px;
     padding: 8px 10px;
-    font-size: 14px;
+    font-size: 16px;
     font-family: inherit;
   }
   .color-swatches{
@@ -748,6 +753,12 @@
   :root:not(.light-theme) .confirm-btn.ok{ color:#000; }
   /* Нижняя панель — серое стекло, как в «Телефоне» и App Store */
   :root:not(.light-theme) .tab-bar{ background: rgba(37,37,40,0.70); }
+  /* Активное поле ввода — неоновая подсветка вместо стандартной рамки браузера */
+  html:root .field input:focus, html:root .hours-row input:focus{
+    outline: none;
+    border-color: var(--focus, var(--teal));
+    box-shadow: 0 0 10px color-mix(in srgb, var(--focus, var(--teal)) 45%, transparent);
+  }
 </style>
 </head>
 <body>
@@ -789,7 +800,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = 'iOS · 2026-09-28 · v10';
+  const APP_BUILD = 'iOS · 2026-09-28 · v11';
 
   let state = {
     version: CURRENT_VERSION,
@@ -1182,7 +1193,7 @@
     html += '      <div class="field"><label>С</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentFrom\')">'+fmtDateShort(f.periodFrom)+'<span style="color:var(--muted);">▾</span></div></div>';
     html += '      <div class="field"><label>По</label><div class="date-trigger" onclick="WC.openDatePicker(\'paymentTo\')">'+fmtDateShort(f.periodTo)+'<span style="color:var(--muted);">▾</span></div></div>';
     html += '    </div>';
-    html += '    <div class="field"><label>Сумма</label><input type="number" min="0" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.setPaymentField(\'amount\', this.value)"></div>';
+    html += '    <div class="field"><label>Сумма</label><input type="number" inputmode="decimal" min="0" id="paymentAmount" value="'+esc(f.amount)+'" oninput="WC.setPaymentField(\'amount\', this.value)"></div>';
     html += '    <div class="field"><label>Место работы (необязательно)</label><div class="choice-row">';
     html += '      <div class="choice'+(f.workplaceId===''?' active':'')+'" style="color:var(--teal)'+(f.workplaceId===''?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPaymentField(\'workplaceId\',\'\')">Все</div>';
     activeWorkplaces().forEach(w=>{
@@ -1190,7 +1201,7 @@
       html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.setPaymentField(\'workplaceId\',\''+w.id+'\')">'+esc(w.name)+'</div>';
     });
     html += '    </div></div>';
-    html += '    <div class="field"><label>Заметка (необязательно)</label><input type="text" id="paymentNote" value="'+esc(f.note)+'" oninput="WC.setPaymentField(\'note\', this.value)"></div>';
+    html += '    <div class="field"><label>Заметка (необязательно)</label><input type="text" autocomplete="off" id="paymentNote" value="'+esc(f.note)+'" oninput="WC.setPaymentField(\'note\', this.value)"></div>';
     html += '    <div class="confirm-actions">';
     html += '      <div class="confirm-btn cancel" onclick="WC.cancelPaymentForm()">Отмена</div>';
     html += '      <div class="confirm-btn ok" onclick="WC.savePayment()">Сохранить</div>';
@@ -1595,7 +1606,7 @@
 
     const dayWp = s.workplaceId ? getWorkplace(s.workplaceId) : null;
     const edgeColor = dayWp ? dayWp.color : (s.dayOff ? 'var(--off-accent)' : '');
-    let html = '<div class="editor open"'+(edgeColor?' style="border-left-color:'+edgeColor+';"':'')+'>';
+    let html = '<div class="editor open"'+(edgeColor?' style="border-left-color:'+edgeColor+';--focus:'+edgeColor+';"':'')+'>';
     html += '  <div class="edate">'+d+' '+MONTHS_GEN[m-1]+', '+weekdayName+'</div>';
 
     const hasAssignment = !!(s.workplaceId || s.dayOff);
@@ -1622,7 +1633,7 @@
     if(s.workplaceId){
       const wp = getWorkplace(s.workplaceId);
       const isDaily = wp && wp.payType==='daily';
-      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="number" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
+      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="number" inputmode="decimal" min="0" step="0.5" id="hoursInput" value="'+(s.hours!=null?s.hours:'')+'" oninput="WC.setHours(this.value)"></div>';
       const pay = calcPay(s);
       html += '  <div class="preview-pay">Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
       if(isDaily && s.hours>0){
@@ -1683,7 +1694,7 @@
 
   function renderPatternPanel(){
     const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
-    let html = '<div class="settings'+(patternOpen?' open':'')+'" style="border-color:'+hexA(pc,0.35)+';">';
+    let html = '<div class="settings'+(patternOpen?' open':'')+'" style="--focus:'+pc+';border-color:'+hexA(pc,0.35)+';">';
     html += '  <div class="section-title">График по шаблону</div>';
 
     html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
@@ -1701,8 +1712,8 @@
     html += '  </div></div>';
 
     html += '  <div class="rate-row">';
-    html += '    <div class="field"><label>Смен подряд</label><input type="number" min="1" id="patternWorkDays" value="'+patternForm.workDays+'" oninput="WC.setPatternField(\'workDays\', this.value)"></div>';
-    html += '    <div class="field"><label>Выходных подряд</label><input type="number" min="0" id="patternOffDays" value="'+patternForm.offDays+'" oninput="WC.setPatternField(\'offDays\', this.value)"></div>';
+    html += '    <div class="field"><label>Смен подряд</label><input type="number" inputmode="numeric" min="1" id="patternWorkDays" value="'+patternForm.workDays+'" oninput="WC.setPatternField(\'workDays\', this.value)"></div>';
+    html += '    <div class="field"><label>Выходных подряд</label><input type="number" inputmode="numeric" min="0" id="patternOffDays" value="'+patternForm.offDays+'" oninput="WC.setPatternField(\'offDays\', this.value)"></div>';
     html += '  </div>';
 
     html += '  <div class="field"><label>Начать с</label><div class="date-trigger" onclick="WC.openDatePicker(\'patternStart\')">'+fmtDateShort(patternForm.startDate)+'<span style="color:var(--muted);">▾</span></div></div>';
@@ -1714,7 +1725,7 @@
 
     const wp = getWorkplace(patternForm.workplaceId);
     const isDaily = wp && wp.payType==='daily';
-    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="number" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="number" inputmode="decimal" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
     html += '    <div class="choice active" style="flex:none;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
@@ -1740,21 +1751,21 @@
     state.workplaces.forEach((w,idx)=>{
       if(w.archived) return;
       n++;
-      html += '  <div class="wp-edit" style="border-color:'+hexA(w.color,0.35)+';box-shadow:0 0 14px '+hexA(w.color,0.10)+';">';
+      html += '  <div class="wp-edit" style="--focus:'+w.color+';border-color:'+hexA(w.color,0.35)+';box-shadow:0 0 14px '+hexA(w.color,0.10)+';">';
       html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
       html += '      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>Место работы '+n+'</span>';
       if(activeCount > 1){
         html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
       }
       html += '    </div>';
-      html += '    <div class="field"><label>Название</label><input type="text" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.updateWp('+idx+',\'name\',this.value)"></div>';
+      html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.updateWp('+idx+',\'name\',this.value)"></div>';
       html += '    <div class="field"><label>Тип оплаты</label><div class="choice-row">';
       html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:'+w.color+(w.payType==='hourly'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
       html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:'+w.color+(w.payType==='daily'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
       html += '    </div></div>';
       html += '    <div class="rate-row">';
-      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="number" min="0" id="wpRateInput'+idx+'" value="'+w.rate+'" oninput="WC.updateWp('+idx+',\'rate\',this.value)"></div>';
-      html += '      <div class="field"><label>Валюта</label><input type="text" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.updateWp('+idx+',\'currency\',this.value)"></div>';
+      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="number" inputmode="decimal" min="0" id="wpRateInput'+idx+'" value="'+w.rate+'" oninput="WC.updateWp('+idx+',\'rate\',this.value)"></div>';
+      html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.updateWp('+idx+',\'currency\',this.value)"></div>';
       html += '    </div>';
       html += '    <div class="field"><label>Цвет</label><div class="color-swatches">';
       SWATCH_COLORS.forEach(c=>{
@@ -2141,6 +2152,11 @@
     patternOpen = false;
     render();
   }, true);
+
+  // Safari присылает отдельные события для щипка — отменяем их, чтобы экран не масштабировался
+  ['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+    document.addEventListener(ev, function(e){ e.preventDefault(); }, { passive:false });
+  });
 
   // Свайп влево/вправо — следующий/предыдущий месяц (в календаре, отчётах и во всплывающем выборе даты).
   // Этот же обработчик touchstart нужен iOS, чтобы показывать :active-состояние кнопок.
