@@ -27,8 +27,11 @@
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
 <title>Табель</title>
+<!-- Шрифты грузятся НЕ блокируя отрисовку и запуск скрипта (media=print -> all после загрузки) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
   :root{
     --bg: #000000;
@@ -393,15 +396,21 @@
   }
   .color-swatches{
     display:flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 5px;
   }
   .swatch{
-    width: 26px; height:26px;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 28px;
+    aspect-ratio: 1;
     border-radius: 6px;
     cursor:pointer;
     border: 2px solid transparent;
+    transition: transform .15s ease;
   }
+  .swatch:active{ transform: scale(0.88); }
   .swatch.active{ border-color: var(--text); }
   .rate-row{ display:flex; gap:8px; flex-wrap:wrap; }
   .rate-row .field{ flex:1; min-width:120px; }
@@ -607,6 +616,53 @@
     transition: color .25s ease, transform .2s ease;
   }
   .tab-item:active{ transform: scale(0.94); }
+  /* Перелистывание месяцев */
+  @keyframes slideFromRight{ from{ transform:translateX(34px); opacity:0; } to{ transform:none; opacity:1; } }
+  @keyframes slideFromLeft{ from{ transform:translateX(-34px); opacity:0; } to{ transform:none; opacity:1; } }
+  .slide-next{ animation: slideFromRight .28s cubic-bezier(.2,.8,.2,1); }
+  .slide-prev{ animation: slideFromLeft .28s cubic-bezier(.2,.8,.2,1); }
+  @media (prefers-reduced-motion: reduce){ .slide-next, .slide-prev{ animation:none; } }
+  /* Плашка «Доступно обновление» */
+  .update-toast{
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(max(12px, calc(env(safe-area-inset-bottom) - 13px)) + 74px);
+    z-index: 450;
+    display:flex; align-items:center; gap:12px;
+    padding: 10px 10px 10px 16px;
+    border-radius: 999px;
+    background: rgba(37,37,40,0.78);
+    -webkit-backdrop-filter: blur(18px) saturate(185%);
+    backdrop-filter: blur(18px) saturate(185%);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.18);
+    font-size: 13px;
+    white-space: nowrap;
+    animation: toastIn .35s cubic-bezier(.3,1.35,.5,1);
+  }
+  :root.light-theme .update-toast{ background: rgba(255,255,255,0.8); box-shadow: 0 8px 24px rgba(0,0,0,0.14), inset 0 0 0 0.5px rgba(0,0,0,0.06); }
+  .update-toast .ut-btn{
+    padding: 7px 14px; border-radius: 999px; cursor:pointer; font-weight:600;
+    color:#000; background: var(--teal); box-shadow: 0 0 12px rgba(0,229,255,0.55);
+  }
+  .update-toast .ut-x{ color: var(--muted); cursor:pointer; padding: 4px 6px; }
+  @keyframes toastIn{ from{ transform:translate(-50%, 20px); opacity:0; } to{ transform:translate(-50%, 0); opacity:1; } }
+  .update-btn{
+    margin-top: 14px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding: 13px 16px;
+    border-radius: 999px;
+    cursor:pointer;
+    font-size: 14px; font-weight: 600;
+    color: var(--teal);
+    background: rgba(0,229,255,0.12);
+    border: 1px solid rgba(0,229,255,0.55);
+    box-shadow: 0 0 14px rgba(0,229,255,0.25);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root.light-theme .update-btn{ color:#007C94; }
+  .update-btn:active{ transform: scale(0.97); }
+  .update-btn.busy{ opacity: .7; pointer-events:none; }
   .tab-item:focus-visible{ outline: 2px solid var(--accent); outline-offset: -2px; }
   .tab-item svg{ width:25px; height:25px; transition: filter .3s ease; }
   .tab-item span{ font-size:10px; font-weight:600; letter-spacing:0; line-height:12px; white-space:nowrap; }
@@ -696,8 +752,8 @@
 </head>
 <body>
 <div id="app"><div class="loading">Загрузка…</div></div>
+<div id="tabbar-root"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
   // ---- Тема (авто/светлая/тёмная) ----
@@ -725,13 +781,15 @@
 
   const SWATCH_COLORS = ['#FF9500','#00E5FF','#FF2FE0','#39FF14','#FFEE00','#FF3B3B','#7B2FFF','#00FFA3','#FF6EC7','#3D5CFF'];
   const WEEKDAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
-  const MONTHS = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+  const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  // Для дат («27 сентября 2026») — родительный падеж
+  const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 
   // Schema version of the persisted data. Bump this and add a step in migrateState()
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = 'iOS · 2026-09-27 · v9';
+  const APP_BUILD = 'iOS · 2026-09-28 · v10';
 
   let state = {
     version: CURRENT_VERSION,
@@ -833,7 +891,7 @@
   function fmtDateShort(k){
     if(!k) return '';
     const [yy,mm,dd] = k.split('-').map(Number);
-    return dd+' '+MONTHS[mm-1]+' '+yy;
+    return dd+' '+MONTHS_GEN[mm-1]+' '+yy;
   }
 
   // ---- Выплаты (журнал фактически полученных денег) ----
@@ -987,9 +1045,52 @@
     });
   }
 
+  // Модуль Excel (~900 КБ) грузим только когда он нужен, а не при запуске: синхронный <script>
+  // с cdnjs (Cloudflare) блокировал запуск приложения, пока провайдер «душит» Cloudflare.
+  const XLSX_SOURCES = [
+    'https://fastly.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+  ];
+  let xlsxLoading = null;
+  function loadScriptOnce(src, timeoutMs){
+    return new Promise(function(resolve, reject){
+      const s = document.createElement('script');
+      let done = false;
+      const finish = function(ok){
+        if(done) return;
+        done = true; clearTimeout(timer);
+        if(ok) resolve(); else reject(new Error('xlsx: '+src));
+      };
+      const timer = setTimeout(function(){ finish(false); }, timeoutMs);
+      s.async = true;
+      s.src = src;
+      s.onload = function(){ finish(typeof XLSX !== 'undefined'); };
+      s.onerror = function(){ finish(false); };
+      document.head.appendChild(s);
+    });
+  }
+  function ensureXLSX(){
+    if(typeof XLSX !== 'undefined') return Promise.resolve();
+    if(!xlsxLoading){
+      xlsxLoading = XLSX_SOURCES.reduce(function(p, src){
+        return p.catch(function(){ return (typeof XLSX !== 'undefined') ? undefined : loadScriptOnce(src, 12000); });
+      }, Promise.reject(new Error('start')));
+      xlsxLoading.catch(function(){ xlsxLoading = null; }); // в следующий раз — попробовать заново
+    }
+    return xlsxLoading;
+  }
+
   function exportWorkbook(sheets, filename){
     if(typeof XLSX === 'undefined'){
-      showAlert('Не удалось загрузить модуль экспорта — проверьте подключение к интернету и попробуйте ещё раз.');
+      showAlert('Загружаю модуль экспорта…');
+      const loadingAlert = confirmState;
+      ensureXLSX().then(function(){
+        if(confirmState === loadingAlert){ confirmState = null; render(); }
+        exportWorkbook(sheets, filename);
+      }, function(){
+        showAlert('Не удалось загрузить модуль экспорта — проверьте подключение к интернету и попробуйте ещё раз.');
+      });
       return;
     }
     const wb = XLSX.utils.book_new();
@@ -1106,7 +1207,9 @@
     { id:'reports',  label:'Отчёты',    icon: analyticsIcon,   color:'#00E5FF', inkDark:'#33EBFF', inkLight:'#007C94' },
     { id:'settings', label:'Настройки', icon: gearIcon,        color:'#7B2FFF', inkDark:'#AD85FF', inkLight:'#5B16E0' }
   ];
-  let lastTabIdx = 0; // где «линза» стояла при прошлой отрисовке — от неё она и поедет
+  let lastTabIdx = 0;
+  let slideDir = 0; // 1 — листаем вперёд, -1 — назад (для анимации сетки)
+  function slideCls(){ return slideDir>0 ? ' slide-next' : (slideDir<0 ? ' slide-prev' : ''); } // где «линза» стояла при прошлой отрисовке — от неё она и поедет
 
   function hexA(hex, a){
     const n = parseInt(hex.slice(1), 16);
@@ -1143,16 +1246,81 @@
     return html;
   }
 
-  // После перерисовки плавно перевозим «линзу» на новую вкладку
-  function animateTabBar(){
-    const bar = document.getElementById('tabBar');
-    if(!bar) return;
+  // Панель рисуется один раз и дальше только обновляется: её не пересоздают при каждом нажатии,
+  // поэтому стекло не перерисовывается целиком, а «линза» плавно переезжает.
+  function updateTabBar(){
+    const root = document.getElementById('tabbar-root');
+    if(!root) return;
     const curIdx = tabIndex();
+    let bar = document.getElementById('tabBar');
+    if(!bar){ lastTabIdx = curIdx; root.innerHTML = renderTabBar(); return; }
     if(curIdx === lastTabIdx) return;
-    void bar.offsetWidth; // фиксируем стартовое положение, чтобы сработал переход
+    bar.querySelectorAll('.tab-item').forEach(function(b,i){
+      const a = i===curIdx; b.classList.toggle('active', a); b.setAttribute('aria-selected', a);
+    });
     bar.style.setProperty('--idx', curIdx);
     setTabAccent(bar, TAB_DEFS[curIdx]);
     lastTabIdx = curIdx;
+  }
+
+  // ---- Обновления ----
+  // GitHub Pages разрешает браузеру держать копию страницы до 10 минут, поэтому новая версия
+  // приходит с опозданием. Здесь мы спрашиваем сайт напрямую, минуя все копии, и перезагружаемся.
+  let updateInfo = { status:'idle', latest:null, dismissed:false, lastCheck:0 };
+  function siteBase(){ return new URL('./', location.href).href; }
+  function canUpdate(){ return /^https?:$/.test(location.protocol); }
+  function fetchLatestBuild(){
+    return fetch(siteBase()+'?check='+Date.now(), { cache:'no-store' })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(function(t){ const m = t.match(/const APP_BUILD = '([^']+)'/); return m ? m[1] : null; });
+  }
+  function checkForUpdates(manual){
+    if(!canUpdate()){ if(manual) showAlert('Обновления загружаются только в приложении, открытом с сайта (с экрана «Домой»).'); return; }
+    if(updateInfo.status==='checking' || updateInfo.status==='updating') return;
+    updateInfo.status = 'checking'; updateInfo.lastCheck = Date.now();
+    if(manual) render();
+    fetchLatestBuild().then(function(b){
+      updateInfo.latest = b;
+      if(b && b !== APP_BUILD){
+        updateInfo.status = 'available';
+        if(manual) applyUpdate(); else render();
+      } else {
+        updateInfo.status = 'uptodate';
+        if(manual) render();
+      }
+    }).catch(function(){
+      updateInfo.status = 'error';
+      if(manual) render();
+    });
+  }
+  function applyUpdate(){
+    updateInfo.status = 'updating'; render();
+    const base = siteBase();
+    // cache:'reload' — берём файл с сервера и заодно заменяем им старую копию в кэше
+    Promise.all([base, base+'index.html', base+'icon.png'].map(function(u){ return fetch(u, { cache:'reload' }).catch(function(){}); }))
+      .then(function(){
+        try{ sessionStorage.setItem('wc-updated-from', APP_BUILD); }catch(e){}
+        location.replace(base+'?v='+Date.now());
+      });
+  }
+  function renderUpdateToast(){
+    if(updateInfo.status==='done') return '<div class="update-toast"><span>✓ Обновлено: '+esc(APP_BUILD)+'</span></div>';
+    if(updateInfo.status==='same') return '<div class="update-toast"><span>Новая версия ещё не появилась на сайте — попробуй через минуту</span></div>';
+    if(updateInfo.status!=='available' || updateInfo.dismissed || currentTab==='settings') return '';
+    return '<div class="update-toast"><span>Доступна новая версия</span><span class="ut-btn" onclick="WC.applyUpdate()">Обновить</span><span class="ut-x" onclick="WC.dismissUpdate()">✕</span></div>';
+  }
+  function renderUpdateButton(){
+    const s = updateInfo.status;
+    let label = 'Загрузить обновления', note = 'Проверит сайт на GitHub и сразу установит новую версию, если она есть.';
+    if(s==='checking'){ label = 'Проверяю…'; note = ''; }
+    else if(s==='updating'){ label = 'Загружаю новую версию…'; note = ''; }
+    else if(s==='available'){ label = 'Установить новую версию'; note = 'На сайте есть версия '+esc(updateInfo.latest||'')+'.'; }
+    else if(s==='uptodate'){ note = 'У тебя последняя версия.'; }
+    else if(s==='error'){ note = 'Не получилось связаться с сайтом. Проверь интернет и попробуй ещё раз.'; }
+    const busy = (s==='checking' || s==='updating');
+    let html = '<div class="update-btn'+(busy?' busy':'')+'" onclick="WC.updateNow()">'+refreshIcon()+'<span>'+label+'</span></div>';
+    if(note) html += '<div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center;line-height:1.4;">'+note+'</div>';
+    return html;
   }
 
   function render(){
@@ -1186,10 +1354,11 @@
 
     html += renderPaymentForm();
     html += renderDatePicker();
-    html += renderTabBar();
+    html += renderUpdateToast();
 
     setHtmlPreservingFocus(app, html);
-    animateTabBar();
+    updateTabBar();
+    slideDir = 0;
   }
 
   function renderCalendarTab(){
@@ -1200,7 +1369,7 @@
 
     let html = '';
     html += '<div class="top">';
-    html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:'+seasonColor(m)+';text-shadow:0 0 14px '+seasonColor(m)+'77;">'+MONTHS[m]+' '+y+'</div></div>';
+    html += '  <div><div class="brand">Табель</div><div class="month-title'+slideCls()+'" style="color:'+seasonColor(m)+';text-shadow:0 0 14px '+seasonColor(m)+'77;">'+MONTHS[m]+' '+y+'</div></div>';
     html += '  <div class="gear-btn" onclick="WC.togglePattern()" title="График по шаблону">'+patternIcon()+'</div>';
     html += '</div>';
 
@@ -1218,7 +1387,7 @@
 
     html += '<div class="weekdays">' + WEEKDAYS.map(w=>'<div>'+w+'</div>').join('') + '</div>';
 
-    html += '<div class="grid">';
+    html += '<div class="grid'+slideCls()+'">';
     for(let i=0;i<lead;i++) html += '<div class="day blank"></div>';
     for(let d=1; d<=nDays; d++){
       const k = dateKey(y,m,d);
@@ -1424,8 +1593,10 @@
     const dateObj = new Date(y, m-1, d);
     const weekdayName = ['вс','пн','вт','ср','чт','пт','сб'][dateObj.getDay()];
 
-    let html = '<div class="editor open">';
-    html += '  <div class="edate">'+d+' '+MONTHS[m-1]+', '+weekdayName+'</div>';
+    const dayWp = s.workplaceId ? getWorkplace(s.workplaceId) : null;
+    const edgeColor = dayWp ? dayWp.color : (s.dayOff ? 'var(--off-accent)' : '');
+    let html = '<div class="editor open"'+(edgeColor?' style="border-left-color:'+edgeColor+';"':'')+'>';
+    html += '  <div class="edate">'+d+' '+MONTHS_GEN[m-1]+', '+weekdayName+'</div>';
 
     const hasAssignment = !!(s.workplaceId || s.dayOff);
     const showPicker = editorPickerOpen || !hasAssignment;
@@ -1511,7 +1682,8 @@
   }
 
   function renderPatternPanel(){
-    let html = '<div class="settings'+(patternOpen?' open':'')+'">';
+    const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
+    let html = '<div class="settings'+(patternOpen?' open':'')+'" style="border-color:'+hexA(pc,0.35)+';">';
     html += '  <div class="section-title">График по шаблону</div>';
 
     html += '  <div class="field"><label>Место работы</label><div class="choice-row">';
@@ -1524,7 +1696,7 @@
     html += '  <div class="field"><label>Быстрый выбор</label><div class="choice-row">';
     [[2,2],[3,3],[4,3],[5,2]].forEach(p=>{
       const active = patternForm.workDays===p[0] && patternForm.offDays===p[1];
-      html += '<div class="choice'+(active?' active':'')+'" style="color:var(--amber)'+(active?';background:#FF950022;box-shadow:0 0 10px var(--amber)':'')+'" onclick="WC.setPatternPreset('+p[0]+','+p[1]+')">'+p[0]+'/'+p[1]+'</div>';
+      html += '<div class="choice'+(active?' active':'')+'" style="color:'+pc+(active?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternPreset('+p[0]+','+p[1]+')">'+p[0]+'/'+p[1]+'</div>';
     });
     html += '  </div></div>';
 
@@ -1536,8 +1708,8 @@
     html += '  <div class="field"><label>Начать с</label><div class="date-trigger" onclick="WC.openDatePicker(\'patternStart\')">'+fmtDateShort(patternForm.startDate)+'<span style="color:var(--muted);">▾</span></div></div>';
 
     html += '  <div class="field"><label>Заполнить</label><div class="choice-row">';
-    html += '<div class="choice'+(patternForm.fillMode==='month'?' active':'')+'" style="color:var(--teal)'+(patternForm.fillMode==='month'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPatternFillMode(\'month\')">До конца месяца</div>';
-    html += '<div class="choice'+(patternForm.fillMode==='week'?' active':'')+'" style="color:var(--teal)'+(patternForm.fillMode==='week'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.setPatternFillMode(\'week\')">До конца недели (по вс.)</div>';
+    html += '<div class="choice'+(patternForm.fillMode==='month'?' active':'')+'" style="color:'+pc+(patternForm.fillMode==='month'?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternFillMode(\'month\')">До конца месяца</div>';
+    html += '<div class="choice'+(patternForm.fillMode==='week'?' active':'')+'" style="color:'+pc+(patternForm.fillMode==='week'?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternFillMode(\'week\')">До конца недели (по вс.)</div>';
     html += '  </div></div>';
 
     const wp = getWorkplace(patternForm.workplaceId);
@@ -1545,7 +1717,7 @@
     html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="number" min="0" step="0.5" id="patternHours" value="'+patternForm.hours+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
-    html += '    <div class="choice active" style="flex:none;color:var(--amber);background:#FF950022;box-shadow:0 0 10px var(--amber);cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
+    html += '    <div class="choice active" style="flex:none;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
     html += '  </div>';
     html += '</div>';
     return html;
@@ -1568,17 +1740,17 @@
     state.workplaces.forEach((w,idx)=>{
       if(w.archived) return;
       n++;
-      html += '  <div class="wp-edit">';
+      html += '  <div class="wp-edit" style="border-color:'+hexA(w.color,0.35)+';box-shadow:0 0 14px '+hexA(w.color,0.10)+';">';
       html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
-      html += '      <span style="font-size:11px;color:var(--muted);">Место работы '+n+'</span>';
+      html += '      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>Место работы '+n+'</span>';
       if(activeCount > 1){
         html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
       }
       html += '    </div>';
       html += '    <div class="field"><label>Название</label><input type="text" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.updateWp('+idx+',\'name\',this.value)"></div>';
       html += '    <div class="field"><label>Тип оплаты</label><div class="choice-row">';
-      html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:var(--teal)'+(w.payType==='hourly'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
-      html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:var(--teal)'+(w.payType==='daily'?';background:#00E5FF22;box-shadow:0 0 10px var(--teal)':'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
+      html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:'+w.color+(w.payType==='hourly'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
+      html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:'+w.color+(w.payType==='daily'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
       html += '    </div></div>';
       html += '    <div class="rate-row">';
       html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="number" min="0" id="wpRateInput'+idx+'" value="'+w.rate+'" oninput="WC.updateWp('+idx+',\'rate\',this.value)"></div>';
@@ -1621,6 +1793,7 @@
       ? ('Сохранено в этом браузере: '+lastSavedAt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))
       : 'Пока ничего не сохранялось в этом браузере';
     html += '  <div style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;line-height:1.5;">'+savedLabel+'<br>Версия приложения: '+APP_BUILD+'</div>';
+    html += renderUpdateButton();
 
     html += '</div>';
     return html;
@@ -1636,6 +1809,10 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="7" rx="1.5"/><rect x="14" y="15" width="7" height="7" rx="1.5"/></svg>';
   }
 
+  function refreshIcon(){
+    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  }
+
   function gearIcon(){
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
   }
@@ -1645,13 +1822,27 @@
   }
 
   window.WC = {
-    prevMonth(){ view.month--; if(view.month<0){view.month=11; view.year--;} selectedDate=null; render(); },
-    nextMonth(){ view.month++; if(view.month>11){view.month=0; view.year++;} selectedDate=null; render(); },
+    shiftMonth(dir){
+      view.month += dir;
+      if(view.month<0){ view.month=11; view.year--; }
+      if(view.month>11){ view.month=0; view.year++; }
+      selectedDate = null;
+      slideDir = dir;
+      render();
+    },
+    prevMonth(){ WC.shiftMonth(-1); },
+    nextMonth(){ WC.shiftMonth(1); },
     goToday(){ const t=new Date(); view.year=t.getFullYear(); view.month=t.getMonth(); selectedDate=todayKey(); render(); },
+    updateNow(){
+      if(updateInfo.status==='available') applyUpdate(); else checkForUpdates(true);
+    },
+    applyUpdate(){ applyUpdate(); },
+    dismissUpdate(){ updateInfo.dismissed = true; render(); },
     switchTab(tab){
       currentTab = tab;
       if(tab !== 'calendar'){ rangeMode=false; rangeStart=null; rangeEnd=null; patternOpen=false; }
       render();
+      if(tab === 'reports') setTimeout(function(){ ensureXLSX().catch(function(){}); }, 800);
     },
     setThemePref(pref){
       themePref = pref;
@@ -1833,7 +2024,7 @@
       saveState(); render();
     },
     clearMonth(){
-      askConfirm('Очистить все смены и выходные за '+MONTHS[view.month]+' '+view.year+'? Действие нельзя отменить.', function(){
+      askConfirm('Очистить все смены и выходные за '+MONTHS[view.month].toLowerCase()+' '+view.year+'? Действие нельзя отменить.', function(){
         const prefix = view.year+'-'+pad(view.month+1)+'-';
         Object.keys(state.shifts).forEach(k=>{ if(k.indexOf(prefix)===0) delete state.shifts[k]; });
         selectedDate = null;
@@ -1951,10 +2142,55 @@
     render();
   }, true);
 
-  // Без этого iOS Safari не показывает :active-состояние (нажатие кнопок панели «пружинит»)
-  document.addEventListener('touchstart', function(){}, { passive:true });
+  // Свайп влево/вправо — следующий/предыдущий месяц (в календаре, отчётах и во всплывающем выборе даты).
+  // Этот же обработчик touchstart нужен iOS, чтобы показывать :active-состояние кнопок.
+  let sw = null;
+  document.addEventListener('touchstart', function(e){
+    sw = null;
+    if(e.touches.length !== 1) return;
+    const t = e.target;
+    if(t.closest('input, textarea, .tab-bar-wrap, .update-toast, .color-swatches')) return;
+    let ctx = null;
+    if(t.closest('.confirm-overlay')){ if(datePickerState) ctx = 'picker'; }
+    else if(!confirmState && !paymentFormState && (currentTab==='calendar' || currentTab==='reports')) ctx = 'page';
+    if(!ctx) return;
+    sw = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), ctx: ctx };
+  }, { passive:true });
+  document.addEventListener('touchend', function(e){
+    if(!sw) return;
+    const s = sw; sw = null;
+    const tt = e.changedTouches && e.changedTouches[0]; if(!tt) return;
+    const dx = tt.clientX - s.x, dy = tt.clientY - s.y;
+    if(Date.now() - s.t > 700 || Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)*1.6) return;
+    const dir = dx < 0 ? 1 : -1;
+    if(s.ctx === 'picker') WC.datePickerNav(dir);
+    else WC.shiftMonth(dir);
+  }, { passive:true });
+  document.addEventListener('touchcancel', function(){ sw = null; }, { passive:true });
 
   loadState();
+
+  // После обновления: убираем служебную метку из адреса и коротко показываем результат
+  if(canUpdate()){
+    try{ if(/[?&]v=\d+/.test(location.search)) history.replaceState(null, '', siteBase()); }catch(e){}
+    let from = null;
+    try{ from = sessionStorage.getItem('wc-updated-from'); sessionStorage.removeItem('wc-updated-from'); }catch(e){}
+    if(from){
+      updateInfo.status = (from === APP_BUILD) ? 'same' : 'done';
+      updateInfo.lastCheck = Date.now();
+      render();
+      setTimeout(function(){ if(updateInfo.status==='done' || updateInfo.status==='same'){ updateInfo.status='uptodate'; render(); } }, 4000);
+    }
+  }
+
+  // Тихая проверка обновлений: через пару секунд после запуска и при возвращении в приложение
+  // (не чаще раза в минуту). Ничего не блокирует — просто покажет плашку, если есть новая версия.
+  if(canUpdate()){
+    setTimeout(function(){ if(updateInfo.status==='idle') checkForUpdates(false); }, 2500);
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState==='visible' && Date.now()-updateInfo.lastCheck > 60000) checkForUpdates(false);
+    });
+  }
 })();
 </script>
 </body>
