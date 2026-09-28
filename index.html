@@ -765,6 +765,36 @@
   .imp-pick img{ display:block; width: 100%; height: auto; cursor: crosshair; }
   .imp-preview{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; background:#fff; touch-action: pan-x pan-y; }
   .imp-preview img{ display:block; height: 88px; width: auto; max-width: none; }
+  .imp-actions{ display:flex; gap:10px; margin-top:6px; }
+  .imp-scan-btn{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center; gap:8px; text-align:center; }
+  .scanner{ position:fixed; inset:0; z-index:2000; background:#000; display:flex; flex-direction:column; touch-action:none; }
+  .scanner video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .scan-shade{ position:absolute; left:4%; right:4%; top:calc(env(safe-area-inset-top) + 104px); bottom:calc(env(safe-area-inset-bottom) + 150px); border-radius:18px;
+    box-shadow:0 0 0 9999px rgba(0,0,0,0.45); pointer-events:none; }
+  .scan-shade i{ position:absolute; width:34px; height:34px; border:3px solid #39FF14; filter:drop-shadow(0 0 6px #39FF14); }
+  .scan-shade i:nth-child(1){ left:-2px; top:-2px; border-right:none; border-bottom:none; border-top-left-radius:18px; }
+  .scan-shade i:nth-child(2){ right:-2px; top:-2px; border-left:none; border-bottom:none; border-top-right-radius:18px; }
+  .scan-shade i:nth-child(3){ left:-2px; bottom:-2px; border-right:none; border-top:none; border-bottom-left-radius:18px; }
+  .scan-shade i:nth-child(4){ right:-2px; bottom:-2px; border-left:none; border-top:none; border-bottom-right-radius:18px; }
+  .scan-hint{ position:absolute; left:16px; right:16px; top:calc(env(safe-area-inset-top) + 18px); color:#fff; font-size:14px; line-height:1.35; text-align:center;
+    background:rgba(28,28,30,0.72); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); border-radius:14px; padding:10px 12px; }
+  .scan-bar{ position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 28px); display:flex; align-items:center; justify-content:space-around; }
+  .scan-round{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff;
+    background:rgba(60,60,67,0.6); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); cursor:pointer; }
+  .scan-round.on{ color:#000; background:#FFD60A; box-shadow:0 0 14px #FFD60A; }
+  .scan-shot{ width:76px; height:76px; border-radius:50%; border:4px solid #fff; background:transparent; padding:0; cursor:pointer;
+    box-shadow:0 0 18px #39FF14, inset 0 0 0 4px #000; display:flex; align-items:center; justify-content:center; }
+  .scan-shot::after{ content:''; width:58px; height:58px; border-radius:50%; background:#fff; }
+  .scan-shot:active::after{ transform:scale(0.9); background:#39FF14; }
+  .scan-flash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .25s; }
+  .scan-err{ position:absolute; left:20px; right:20px; top:50%; transform:translateY(-50%); color:#fff; text-align:center; font-size:15px; line-height:1.4;
+    background:rgba(28,28,30,0.9); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); border-radius:18px; padding:18px 16px; }
+  .scan-err .choice{ margin-top:12px; }
+  .imp-cand{ margin-top: 8px; border-radius: 12px; overflow: hidden; border: 1.5px solid var(--border); background:#fff; cursor: pointer; }
+  .imp-cand img{ display:block; height: 40px; width: auto; max-width: 100%; object-fit: cover; object-position: left center; }
+  .imp-cand:active{ transform: scale(0.98); }
+  .imp-name{ margin-top: 8px; border-radius: 10px; overflow: hidden; background:#fff; display:inline-block; max-width: 100%; }
+  .imp-name img{ display:block; height: 34px; width: auto; max-width: 100%; object-fit: cover; object-position: left center; }
   .imp-grid .day{ min-height: 40px; }
   .imp-day-edit{ margin-top: 12px; padding: 12px; border-radius: 16px; background: var(--panel-alt); }
   .imp-grid .day .amt{ font-size: 9px; font-weight: 600; }
@@ -815,7 +845,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 3;
-  const APP_BUILD = 'iOS · 2026-09-28 · v14';
+  const APP_BUILD = 'iOS · 2026-09-29 · v15';
 
   let state = {
     version: CURRENT_VERSION,
@@ -2009,31 +2039,128 @@
       img.src = url;
     });
   }
+  // Наклон фото: ищем угол, при котором тёмные горизонтальные штрихи (линии таблицы, строки текста)
+  // ложатся в самые «острые» полосы. Работает на уменьшенной копии — быстро.
+  function estimateSkew(img, W0, H0){
+    const f = Math.min(1, 900 / Math.max(W0, 1));
+    const w = Math.max(8, Math.round(W0*f)), h = Math.max(8, Math.round(H0*f));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently:true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data, g = new Float32Array(w*h);
+    for(let i=0,j=0;i<g.length;i++,j+=4) g[i] = 0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2];
+    const px = [], py = [];
+    for(let y=2;y<h-2;y++) for(let x=0;x<w;x++){
+      const v = g[y*w+x];
+      if(g[(y-2)*w+x] - v > 22 && g[(y+2)*w+x] - v > 22){ px.push(x); py.push(y); }
+    }
+    if(px.length < 200) return 0;
+    const n = px.length, hist = new Float32Array(h + w + 4);
+    const score = function(deg){
+      const t = Math.tan(deg*Math.PI/180), off = w*0.2 + 2; hist.fill(0);
+      for(let k=0;k<n;k++){ const b = Math.round(py[k] - px[k]*t + off); if(b >= 0 && b < hist.length) hist[b]++; }
+      let s = 0; for(let i=0;i<hist.length;i++) s += hist[i]*hist[i];
+      return s;
+    };
+    let best = 0, bs = -1;
+    for(let a=-12; a<=12.001; a+=0.5){ const s = score(a); if(s > bs){ bs = s; best = a; } }
+    const c0 = best;
+    for(let a=c0-0.5; a<=c0+0.501; a+=0.1){ const s = score(a); if(s > bs){ bs = s; best = a; } }
+    return best;
+  }
+  // Выравнивание освещения: делим яркость на «фон» (светлый уровень в окрестности) —
+  // тени, тёмные углы, цветная заливка клеток становятся белыми, текст и линии остаются тёмными
+  function flattenLight(G, W, H){
+    const B = Math.max(16, Math.round(Math.max(W, H)/120));
+    const gw = Math.ceil(W/B), gh = Math.ceil(H/B);
+    if(gw < 2 || gh < 2) return;
+    const bgv = new Float32Array(gw*gh);
+    const hist = new Uint32Array(64);
+    for(let by=0;by<gh;by++) for(let bx=0;bx<gw;bx++){
+      hist.fill(0); let n = 0;
+      const y0 = by*B, y1 = Math.min(H, y0+B), x0 = bx*B, x1 = Math.min(W, x0+B);
+      for(let y=y0;y<y1;y+=2) for(let x=x0;x<x1;x+=2){ hist[G[y*W+x]>>2]++; n++; }
+      let acc = 0, v = 255; for(let i=63;i>=0;i--){ acc += hist[i]; if(acc >= n*0.1){ v = i*4+2; break; } }
+      bgv[by*gw+bx] = v;
+    }
+    // сглаживание фона: максимум по соседям (чтобы крупные тёмные буквы не «съели» фон), затем среднее
+    const mx = new Float32Array(gw*gh), sm = new Float32Array(gw*gh);
+    for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ let m = 0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const yy=y+dy, xx=x+dx; if(yy>=0&&yy<gh&&xx>=0&&xx<gw&&bgv[yy*gw+xx]>m) m = bgv[yy*gw+xx]; } mx[y*gw+x] = m; }
+    for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ let s = 0, c = 0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const yy=y+dy, xx=x+dx; if(yy>=0&&yy<gh&&xx>=0&&xx<gw){ s += mx[yy*gw+xx]; c++; } } sm[y*gw+x] = s/c; }
+    const all = Array.prototype.slice.call(sm).sort(function(a, b){ return a - b; });
+    const bright = all[Math.floor(all.length*0.9)] || 255, floor = Math.max(40, 0.5*bright);
+    for(let i=0;i<sm.length;i++) if(sm[i] < floor) sm[i] = floor;
+    for(let y=0;y<H;y++){
+      const fy = Math.min(gh-1.001, Math.max(0, (y + 0.5)/B - 0.5)), iy = Math.floor(fy), ty = fy - iy;
+      for(let x=0;x<W;x++){
+        const fx = Math.min(gw-1.001, Math.max(0, (x + 0.5)/B - 0.5)), ix = Math.floor(fx), tx = fx - ix;
+        const k = iy*gw + ix;
+        const bgp = (sm[k]*(1-tx) + sm[k+1 < sm.length ? k+1 : k]*tx)*(1-ty) + ((sm[k+gw] !== undefined ? sm[k+gw] : sm[k])*(1-tx) + (sm[k+gw+1] !== undefined ? sm[k+gw+1] : sm[k])*tx)*ty;
+        const v = 255*G[y*W+x]/Math.max(1, bgp);
+        G[y*W+x] = v > 255 ? 255 : v;
+      }
+    }
+  }
   function prepImage(img){
     const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height;
     // мелкий текст увеличиваем (распознаванию нужно ≥20 px на строку), огромные фото — уменьшаем
     let sc = W0 < 2200 ? Math.min(3, 3000/W0) : Math.min(1, 3200/W0);
     const maxArea = 12e6; // ограничение памяти iOS для canvas
     if(W0*H0*sc*sc > maxArea) sc = Math.sqrt(maxArea/(W0*H0));
-    const W = Math.max(1, Math.round(W0*sc)), H = Math.max(1, Math.round(H0*sc));
+    let skew = 0;
+    try{ skew = estimateSkew(img, W0, H0); }catch(e){ skew = 0; }
+    if(Math.abs(skew) < 0.3) skew = 0;
+    const a = -skew*Math.PI/180, ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
+    const w1 = W0*sc, h1 = H0*sc;
+    let W = Math.max(1, Math.round(w1*ca + h1*sa)), H = Math.max(1, Math.round(w1*sa + h1*ca));
+    if(W*H > maxArea*1.05){ const k = Math.sqrt(maxArea/(W*H)); sc *= k; W = Math.round(W*k); H = Math.round(H*k); }
+    // Уменьшение (если нужно) делает браузер, а увеличение и поворот — наш код (билинейно):
+    // так результат одинаков на любом устройстве и в любом браузере
+    const pre = sc < 1 ? sc : 1, rest = sc/pre;
+    const sw = Math.max(1, Math.round(W0*pre)), sh = Math.max(1, Math.round(H0*pre));
+    const sCan = document.createElement('canvas'); sCan.width = sw; sCan.height = sh;
+    const sctx = sCan.getContext('2d', { willReadFrequently:true });
+    sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
+    sctx.fillStyle = '#fff'; sctx.fillRect(0, 0, sw, sh);
+    sctx.drawImage(img, 0, 0, sw, sh);
+    const sd = sctx.getImageData(0, 0, sw, sh).data;
+    const Gs = new Float32Array(sw*sh);
+    // яркость по самому светлому каналу: цветная заливка клеток (голубая, жёлтая) становится почти белой,
+    // а чёрный текст и линии остаются тёмными
+    for(let i=0,j=0;i<Gs.length;i++,j+=4){
+      const r = sd[j], g = sd[j+1], bl = sd[j+2];
+      if(IMP_CFG.maxChan){ const mx = r > g ? (r > bl ? r : bl) : (g > bl ? g : bl); Gs[i] = 0.75*mx + 0.25*(0.299*r + 0.587*g + 0.114*bl); }
+      else Gs[i] = 0.299*r + 0.587*g + 0.114*bl;
+    }
+    sCan.width = sCan.height = 1;
+    const G = new Float32Array(W*H);
+    const ca2 = Math.cos(a), sa2 = Math.sin(a), cxo = W/2, cyo = H/2, cxs = sw*rest/2, cys = sh*rest/2;
+    for(let y=0;y<H;y++){
+      const dy = y + 0.5 - cyo;
+      for(let x=0;x<W;x++){
+        const dx = x + 0.5 - cxo;
+        const u = (ca2*dx + sa2*dy + cxs)/rest - 0.5, v = (-sa2*dx + ca2*dy + cys)/rest - 0.5;
+        if(u < -0.5 || v < -0.5 || u > sw - 0.5 || v > sh - 0.5){ G[y*W+x] = 255; continue; }
+        let x0 = Math.floor(u), y0 = Math.floor(v); let fx = u - x0, fy = v - y0;
+        if(x0 < 0){ x0 = 0; fx = 0; } if(y0 < 0){ y0 = 0; fy = 0; }
+        if(x0 >= sw - 1){ x0 = sw - 2; fx = 1; } if(y0 >= sh - 1){ y0 = sh - 2; fy = 1; }
+        if(sw < 2 || sh < 2){ G[y*W+x] = Gs[0]; continue; }
+        const k = y0*sw + x0;
+        G[y*W+x] = (Gs[k]*(1-fx) + Gs[k+1]*fx)*(1-fy) + (Gs[k+sw]*(1-fx) + Gs[k+sw+1]*fx)*fy;
+      }
+    }
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const ctx = c.getContext('2d', { willReadFrequently:true });
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
-    ctx.drawImage(img, 0, 0, W, H);
-    const id = ctx.getImageData(0,0,W,H), d = id.data;
-    const G = new Float32Array(W*H);
-    for(let i=0,j=0;i<G.length;i++,j+=4){
-      const v = 0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2];
-      G[i] = v; d[j] = d[j+1] = d[j+2] = v; d[j+3] = 255;
-    }
+    const id = ctx.createImageData(W, H), d = id.data;
+    flattenLight(G, W, H);
+    for(let i=0,j=0;i<G.length;i++,j+=4){ const v = G[i]; d[j] = d[j+1] = d[j+2] = v; d[j+3] = 255; }
     ctx.putImageData(id, 0, 0);
     // уровень «чернил» по всему фото: 1-й процентиль яркости (через гистограмму — быстро)
     const hist = new Uint32Array(256);
     for(let i=0;i<G.length;i+=3) hist[G[i]|0]++;
     let acc = 0, tot = 0; for(let i=0;i<256;i++) tot += hist[i];
     let textLevel = 0; for(let i=0;i<256;i++){ acc += hist[i]; if(acc >= tot*0.01){ textLevel = i; break; } }
-    return { canvas:c, G:G, W:W, H:H, scale:sc, textLevel:textLevel };
+    return { canvas:c, G:G, W:W, H:H, scale:sc, textLevel:textLevel, skew:skew };
   }
 
   // ---------- распознавание текста ----------
@@ -2125,26 +2252,29 @@
   }
 
   // ---------- горизонтальные линии таблицы ----------
+  // Горизонтальные линии в вертикальной полосе [a, b): строка, где больше половины пикселей темнее
+  // соседей сверху и снизу (тонкая тёмная черта) — не зависит от освещения и цвета заливки
   function segLines(P, a, b, y0, y1){
-    const G = P.G, W = P.W;
-    a = Math.max(0, a|0); b = Math.min(W, b|0); y0 = Math.max(0, y0|0); y1 = Math.min(P.H, y1|0);
+    const G = P.G, W = P.W, Hh = P.H;
+    a = Math.max(0, a|0); b = Math.min(W, b|0); y0 = Math.max(0, y0|0); y1 = Math.min(Hh, y1|0);
     if(b-a < 2 || y1-y0 < 2) return [];
-    const hist = new Uint32Array(256); let n = 0;
-    for(let y=y0;y<y1;y+=2) for(let x=a;x<b;x+=2){ hist[G[y*W+x]|0]++; n++; }
-    let acc = 0, med = 0; for(let i=0;i<256;i++){ acc += hist[i]; if(acc >= n/2){ med = i; break; } }
-    const thr = med - 25, ys = [];
+    const ys = [], need = 0.5*(b - a);
     let run = -1;
     for(let y=y0;y<y1;y++){
-      let cnt = 0; const row = y*W;
-      for(let x=a;x<b;x++) if(G[row+x] < thr) cnt++;
-      const isLine = cnt > 0.5*(b-a);
+      const row = y*W, u2 = Math.max(0, y-2)*W, d2 = Math.min(Hh-1, y+2)*W, u4 = Math.max(0, y-4)*W, d4 = Math.min(Hh-1, y+4)*W;
+      let cnt = 0;
+      for(let x=a;x<b;x++){
+        const v = G[row+x] + 18;
+        if((v < G[u2+x] && v < G[d2+x]) || (v < G[u4+x] && v < G[d4+x])) cnt++;
+      }
+      const isLine = cnt > need;
       if(isLine && run < 0) run = y;
       if(!isLine && run >= 0){ ys.push((run + y - 1)/2); run = -1; }
     }
     if(run >= 0) ys.push((run + y1 - 1)/2);
     return ys;
   }
-  function trackLines(P, x0, x1, slope0, segW){
+  function trackLines(P, x0, x1, slope0, segW, minFrac){
     const segs = [];
     for(let a=x0; a<x1; a+=segW){ const b = Math.min(a+segW, x1); segs.push({ xc:(a+b)/2, ys:segLines(P, a, b, 0, P.H) }); }
     const tol = Math.max(2.5, 0.12*segW/2);
@@ -2165,28 +2295,116 @@
     });
     const out = [];
     lines.forEach(function(L){
-      if(L.xs.length >= Math.max(3, 0.4*segs.length)){
-        const c = polyfit(L.xs, L.ys, L.xs.length < 6 ? 1 : 2) || polyfit(L.xs, L.ys, 1);
-        if(c) out.push(c);
+      if(L.xs.length >= Math.max(3, (minFrac || 0.4)*segs.length)){
+        const o = makeLine(L.xs, L.ys);
+        if(!o) return;
+        // линия должна лечь ровно: большой разброс точек — это «перескок» между строками текста
+        let r2 = 0; for(let i=0;i<L.xs.length;i++){ const e = L.ys[i] - polyval(o.c, L.xs[i]); r2 += e*e; }
+        o.rms = Math.sqrt(r2/L.xs.length); o.slope = o.c1[1] || 0;
+        if(o.rms <= 2.5) out.push(o);
       }
     });
+    // наклон всех линий таблицы почти одинаков (после выравнивания фото — около нуля)
+    if(out.length >= 3){
+      const ms = median(out.map(function(o){ return o.slope; }));
+      for(let i=out.length-1;i>=0;i--) if(Math.abs(out[i].slope - ms) > 0.02) out.splice(i, 1);
+    }
     const mid = (x0+x1)/2;
-    out.sort(function(p, q){ return polyval(p, mid) - polyval(q, mid); });
+    out.sort(function(p, q){ return lineY(p, mid) - lineY(q, mid); });
     return out;
   }
+  // Линия таблицы: многочлен по найденным точкам; за пределами найденного участка — продолжение по касательной
+  function makeLine(xs, ys){
+    const c = polyfit(xs, ys, xs.length < 6 ? 1 : 2) || polyfit(xs, ys, 1);
+    const c1 = polyfit(xs, ys, 1) || c;
+    if(!c) return null;
+    return { c:c, c1:c1, x0:Math.min.apply(null, xs), x1:Math.max.apply(null, xs), xs:xs.slice(), ys:ys.slice() };
+  }
+  function lineY(L, x){
+    if(x < L.x0 || x > L.x1){
+      // за пределами найденного участка — прямая (перспектива прямые линии оставляет прямыми)
+      const xe = x < L.x0 ? L.x0 : L.x1;
+      return polyval(L.c1, x) + (polyval(L.c, xe) - polyval(L.c1, xe));
+    }
+    return polyval(L.c, x);
+  }
+  // Продлеваем линии влево (в область ФИО): идём отрезками и ищем тёмную линию рядом с продолжением
+  function extendLinesLeft(P, lines, xTo, segW, pitch){
+    const G = P.G, W = P.W, Hh = P.H;
+    const win = Math.max(3, 0.2*pitch);
+    const coverAt = function(a, bb, y, thr){ let cnt = 0; const row = y*W; for(let x=a;x<bb;x++) if(G[row+x] < thr) cnt++; return cnt/(bb - a); };
+    lines.forEach(function(L){
+      const pts = L.xs.map(function(x, i){ return [x, L.ys[i]]; }).sort(function(p, q){ return p[0] - q[0]; });
+      const added = [];
+      let miss = 0;
+      for(let b=L.x0 - segW/2; b > xTo; b -= segW){
+        const a = Math.max(0, Math.round(b - segW)), bb = Math.min(W, Math.round(b));
+        if(bb - a < 4) break;
+        const xc = (a + bb)/2;
+        // прогноз — прямая по 6 самым левым найденным точкам
+        const lp = added.length >= 2 ? added.slice(-6) : pts.slice(0, 6);
+        const lc = lp.length >= 2 ? polyfit(lp.map(function(p){ return p[0]; }), lp.map(function(p){ return p[1]; }), 1) : null;
+        const pred = lc ? polyval(lc, xc) : lineY(L, xc);
+        const y0 = Math.max(0, Math.floor(pred - win)), y1 = Math.min(Hh - 1, Math.ceil(pred + win));
+        const hist = new Uint32Array(256); let n = 0;
+        for(let y=y0;y<=y1;y++) for(let x=a;x<bb;x+=2){ hist[G[y*W+x]|0]++; n++; }
+        let acc = 0, med = 0; for(let i=0;i<256;i++){ acc += hist[i]; if(acc >= n*0.6){ med = i; break; } }
+        const thr = med - 25;
+        let bestY = -1, bestC = 0;
+        for(let y=y0;y<=y1;y++){ const cv = coverAt(a, bb, y, thr); if(cv > bestC){ bestC = cv; bestY = y; } }
+        if(bestC >= 0.7){
+          let t0 = bestY, t1 = bestY;
+          while(t0 - 1 >= y0 && coverAt(a, bb, t0 - 1, thr) >= 0.5*bestC) t0--;
+          while(t1 + 1 <= y1 && coverAt(a, bb, t1 + 1, thr) >= 0.5*bestC) t1++;
+          added.push([xc, (t0 + t1)/2]); miss = 0;
+        } else if(++miss > 8) break;
+      }
+      L.ext = null;
+      if(added.length){
+        const all = pts.concat(added);
+        const o = makeLine(all.map(function(p){ return p[0]; }), all.map(function(p){ return p[1]; }));
+        if(o) L.ext = o;
+      }
+    });
+    // проверка: соседние линии не должны сходиться или расходиться — иначе продление ошибочно
+    const xr = Math.max.apply(null, lines.map(function(L){ return L.x0; }).concat([xTo]));
+    const order = lines.slice().sort(function(p, q){ return lineY(p, xr) - lineY(q, xr); });
+    const yAt = function(L, x){ return lineY(L.ext || L, x); };
+    const xsChk = [xTo, (xTo + xr)/2];
+    order.forEach(function(L, i){
+      if(!L.ext) return;
+      const nb = [order[i-1], order[i+1]].filter(Boolean);
+      const ok = nb.every(function(M){
+        const g0 = lineY(M, xr) - lineY(L, xr);
+        return xsChk.every(function(x){ const g = yAt(M, x) - yAt(L, x); return g*g0 > 0 && Math.abs(g) > 0.6*Math.abs(g0) && Math.abs(g) < 1.5*Math.abs(g0); });
+      });
+      if(ok){ const o = L.ext; L.c = o.c; L.c1 = o.c1; L.x0 = o.x0; L.x1 = o.x1; L.xs = o.xs; L.ys = o.ys; }
+      L.ext = null;
+    });
+    return lines;
+  }
+  // Геометрия таблицы: линии строк (найдены по сетке дней и продлены в область ФИО) и шаг строк
+  function tableGeometry(P, H, nd){
+    const b = colPitch(H, nd);
+    const xs = Math.max(0, xOfDay(H, 0.5) - 1.5*b), xe = Math.min(P.W, xOfDay(H, nd+0.5) + 2);
+    const lines = trackLines(P, xs, xe, H.py[1] || 0, Math.max(10, Math.round(2*b)));
+    const pitch = estimatePitch(lines, xOfDay(H, 1), b) || 1.8*H.h;
+    extendLinesLeft(P, lines, Math.max(0, xOfDay(H, 0.5) - 16*b), Math.max(8, Math.round(0.8*b)), pitch);
+    return { lines:lines, pitch:pitch, b:b };
+  }
   function rowBand(lines, xName, yName, pitch, slope){
-    const at = lines.map(function(c){ return { y:polyval(c, xName), c:c }; });
+    const at = lines.map(function(L){ return { y:lineY(L, xName), L:L }; });
     const above = at.filter(function(t){ return t.y < yName - 0.1*pitch && yName - t.y < 1.2*pitch; });
     const below = at.filter(function(t){ return t.y > yName + 0.1*pitch && t.y - yName < 1.2*pitch; });
     const up = above.length ? above.reduce(function(m, t){ return t.y > m.y ? t : m; }) : null;
     const dn = below.length ? below.reduce(function(m, t){ return t.y < m.y ? t : m; }) : null;
-    if(up && dn) return { top:function(x){ return polyval(up.c, x); }, bot:function(x){ return polyval(dn.c, x); } };
-    if(up) return { top:function(x){ return polyval(up.c, x); }, bot:function(x){ return polyval(up.c, x) + pitch; } };
-    if(dn) return { top:function(x){ return polyval(dn.c, x) - pitch; }, bot:function(x){ return polyval(dn.c, x); } };
+    if(up && dn) return { top:function(x){ return lineY(up.L, x); }, bot:function(x){ return lineY(dn.L, x); } };
+    if(up) return { top:function(x){ return lineY(up.L, x); }, bot:function(x){ return lineY(up.L, x) + pitch; } };
+    if(dn) return { top:function(x){ return lineY(dn.L, x) - pitch; }, bot:function(x){ return lineY(dn.L, x); } };
     return { top:function(x){ return yName + slope*(x-xName) - pitch/2; }, bot:function(x){ return yName + slope*(x-xName) + pitch/2; } };
   }
   function estimatePitch(lines, x, colW){
-    const ys = lines.map(function(c){ return polyval(c, x); }).sort(function(a,b){ return a-b; });
+    const ys = lines.map(function(L){ return lineY(L, x); }).sort(function(a,b){ return a-b; });
     const diffs = [];
     for(let i=1;i<ys.length;i++){ const d = ys[i]-ys[i-1]; if(d > 0.3*colW && d < 1.6*colW) diffs.push(d); }
     return diffs.length ? median(diffs) : null;
@@ -2264,100 +2482,698 @@
   }
 
   // ---------- чтение строки сотрудника ----------
+  // Строка сотрудника по клеткам: границы клеток — по линиям сетки самой строки (учитывает наклон и перспективу),
+  // содержимое каждой клетки читает нейросеть: пусто / «1» / число часов / надпись
   function readRow(P, H, nd, anchor, pitch, lines, words){
     const b = colPitch(H, nd);
     const xs0 = Math.max(0, Math.floor(xOfDay(H, 0.5) - 2)), xs1 = Math.min(P.W-1, Math.ceil(xOfDay(H, nd+0.5) + 2));
     const band = rowBand(lines, anchor.x, anchor.y, pitch, H.py[1] || 0);
-    const inner = sampleBand(P, band, xs0, xs1, 0.12, 0.9, 20);
-    const zoneDefs = [[-0.18,-0.06],[0.05,0.13],[0.9,0.96],[1.06,1.18]];
-    const zones = zoneDefs.map(function(z){ return sampleBand(P, band, xs0, xs1, z[0], z[1], 4); });
-    const w = inner.w, n = inner.n, S = inner.S, tl = P.textLevel;
-    const bg = new Float32Array(w), col = new Float32Array(n);
-    for(let i=0;i<w;i++){ for(let r=0;r<n;r++) col[r] = S[r*w+i]; bg[i] = percentile(col, 75); }
-    const strict0 = new Uint8Array(n*w);
-    for(let i=0;i<w;i++){ const thr = Math.max(30, 0.35*Math.max(1, bg[i]-tl)); for(let r=0;r<n;r++) if(bg[i]-S[r*w+i] > thr) strict0[r*w+i] = 1; }
-    // тонкий штрих может быть размазан на два столбца — объединяем соседние
-    const strict = new Uint8Array(n*w);
-    for(let r=0;r<n;r++) for(let i=0;i<w;i++){ const k = r*w+i; strict[k] = strict0[k] | (i>0 ? strict0[k-1] : 0) | (i<w-1 ? strict0[k+1] : 0); }
-    // линия сетки: тёмная у верхней границы строки (снаружи и внутри) и у нижней
-    const zfrac = zones.map(function(Z){
-      const f = new Float32Array(w);
-      for(let i=0;i<w;i++){ const thr = Math.max(18, 0.18*Math.max(1, bg[i]-tl)); let c = 0; for(let r=0;r<Z.n;r++) if(bg[i]-Z.S[r*w+i] > thr) c++; f[i] = c/Z.n; }
-      return f;
+    // клетки по умолчанию — из шапки
+    const cellL = {}, cellR = {};
+    for(let d=1; d<=nd; d++){ cellL[d] = xOfDay(H, d - 0.5); cellR[d] = xOfDay(H, d + 0.5); }
+    // уточнение по вертикальным линиям этой строки
+    try{
+      const ch = regularChain(bandSeparators(P, band, xs0 - b, xs1 + b), 0.5*b);
+      if(ch && ch.length >= 6){
+        const offs = [];
+        for(let j=0;j+1<ch.length;j++){ const t = dayOfX(H, (ch[j] + ch[j+1])/2, nd); offs.push(Math.round(t) - j); }
+        const k0 = Math.round(median(offs));
+        let agree = 0; offs.forEach(function(o){ if(o === k0) agree++; });
+        if(agree >= 0.6*offs.length){
+          const shift = [];
+          for(let j=0;j+1<ch.length;j++){
+            const d = j + k0; if(d < 1 || d > nd) continue;
+            cellL[d] = ch[j]; cellR[d] = ch[j+1];
+            shift.push((ch[j] + ch[j+1])/2 - xOfDay(H, d));
+          }
+          // дни за пределами найденной цепочки — со средним сдвигом
+          const sh = shift.length ? median(shift) : 0;
+          for(let d=1; d<=nd; d++){
+            const j = d - k0;
+            if(j < 0 || j + 1 >= ch.length){ cellL[d] = xOfDay(H, d - 0.5) + sh; cellR[d] = xOfDay(H, d + 0.5) + sh; }
+          }
+        }
+      }
+    }catch(e){}
+    // границы клеток уточняем по самим вертикальным линиям рядом (тёмный столбец через всю строку)
+    const G = P.G, Wd = P.W;
+    const snap = function(x){
+      // линия — тёмная почти во всех точках по высоте строки (цифра «1» у края — только в части)
+      const r = Math.max(2, 0.14*b), cols = [], vals = [];
+      for(let xi=Math.round(x - r); xi<=Math.round(x + r); xi++){
+        const v = [];
+        if(xi >= 1 && xi < Wd - 1){
+          const t = band.top(xi), h = band.bot(xi) - t;
+          for(let f=0.08; f<=0.921; f+=0.07){ const y = Math.round(t + f*h); if(y >= 0 && y < P.H) v.push(G[y*Wd + xi]); }
+        }
+        cols.push([xi, v]); v.forEach(function(q){ vals.push(q); });
+      }
+      if(!vals.length) return x;
+      const bgv = percentile(vals, 75);
+      let best = null;
+      cols.forEach(function(c){
+        if(!c[1].length) return;
+        let k = 0; c[1].forEach(function(q){ if(q < bgv - 15) k++; });
+        const fr = k/c[1].length;
+        if(fr >= 0.85 && (!best || fr > best.fr + 0.05 || (Math.abs(fr - best.fr) <= 0.05 && Math.abs(c[0] - x) < Math.abs(best.x - x)))) best = { x:c[0], fr:fr };
+      });
+      return best ? best.x : x;
+    };
+    if(IMP_CFG.snap) for(let d=1; d<=nd; d++){ cellL[d] = snap(cellL[d]); cellR[d] = snap(cellR[d]); }
+    const res = IMP_CFG.glyphRow ? readRowGlyphs(P, band, nd, cellL, cellR, b) : {};
+    if(!IMP_CFG.glyphRow) for(let d=1; d<=nd; d++){
+      const L = cellL[d], R = cellR[d], w = R - L;
+      if(!(w > 3)) continue;
+      const rc = readCellValue(P, band, L + IMP_CFG.inset*w, R - IMP_CFG.inset*w);
+      if(!rc) continue;
+      res[d] = rc.text ? 'text' : (rc.v == null ? '?' : rc.v);
+    }
+    // надпись через несколько клеток («отпуск», «предварительно») — это не смены
+    for(let d=1; d<=nd; d++) if(res[d] === '?' && (res[d-1] === 'text' || res[d+1] === 'text')) res[d] = 'text';
+    return { days:res, band:band, xs0:xs0, xs1:xs1, cellL:cellL, cellR:cellR };
+  }
+  function localInkMask(S0, w, n, R, lr0, lr1){
+    // лёгкое сглаживание 3×3
+    const S = new Float32Array(n*w);
+    for(let r=0;r<n;r++) for(let i=0;i<w;i++){
+      let s = 0, c = 0;
+      for(let dr=-1;dr<=1;dr++){ const rr = r+dr; if(rr < 0 || rr >= n) continue; for(let di=-1;di<=1;di++){ const ii = i+di; if(ii < 0 || ii >= w) continue; s += S0[rr*w+ii]; c++; } }
+      S[r*w+i] = s/c;
+    }
+    // местный фон: максимум яркости в окне ±R (разделимый фильтр)
+    const T = new Float32Array(n*w), B = new Float32Array(n*w);
+    for(let r=0;r<n;r++){ const o = r*w; for(let i=0;i<w;i++){ let m = 0; const a = Math.max(0, i-R), b = Math.min(w-1, i+R); for(let k=a;k<=b;k++) if(S[o+k] > m) m = S[o+k]; T[o+i] = m; } }
+    for(let i=0;i<w;i++) for(let r=0;r<n;r++){ let m = 0; const a = Math.max(0, r-R), b = Math.min(n-1, r+R); for(let k=a;k<=b;k++) if(T[k*w+i] > m) m = T[k*w+i]; B[r*w+i] = m; }
+    // уровень «чернил» — самое тёмное по середине строки рядом (±3R по ширине)
+    const cmin = new Float32Array(w);
+    for(let i=0;i<w;i++){ let m = 255; for(let r=lr0;r<=lr1;r++) if(S[r*w+i] < m) m = S[r*w+i]; cmin[i] = m; }
+    const lo = slidingMin(cmin, 3*R);
+    const M = new Uint8Array(n*w), soft = new Float32Array(n*w);
+    for(let r=0;r<n;r++) for(let i=0;i<w;i++){
+      const k = r*w+i, bg = B[k], c = bg - lo[i];
+      if(c < 30) continue;
+      if(S[k] < bg - Math.max(18, 0.4*c)) M[k] = 1;
+      const t = (bg - S[k])/c; soft[k] = t <= 0.1 ? 0 : (t >= 0.8 ? 1 : (t - 0.1)/0.7);
+    }
+    M.soft = soft;
+    return M;
+  }
+  // Тонкие длинные горизонтальные черты (обрывки линий, край заливки) — убираем; толстые штрихи цифр остаются
+  function removeThinRuns(M, w, n, minLen){
+    const kill = [];
+    for(let r=0;r<n;r++) for(let i=0;i<w;){
+      if(M[r*w+i]){
+        let j = i; while(j+1 < w && M[r*w+j+1]) j++;
+        if(j - i + 1 >= minLen){
+          // в длинной черте убираем только тонкие места (толщиной 1–2 точки): тело цифры, через которое она проходит, остаётся
+          for(let q=i;q<=j;q++){ let t = 1, u = r - 1; while(u >= 0 && M[u*w+q] && t < 4){ t++; u--; } u = r + 1; while(u < n && M[u*w+q] && t < 4){ t++; u++; } if(t <= 2) kill.push([r, q, q]); }
+        }
+        i = j+1;
+      } else i++;
+    }
+    kill.forEach(function(k){ for(let q=k[1];q<=k[2];q++) M[k[0]*w+q] = 0; });
+  }
+  // Вся строка сразу: знаки (связные области) не режутся границами клеток, день — по центру знака
+  function readRowGlyphs(P, band, nd, cellL, cellR, b){
+    const xa = Math.max(0, cellL[1] - 0.3*b), xb = Math.min(P.W - 2, cellR[nd] + 0.3*b);
+    const xm = (xa + xb)/2, hb = band.bot(xm) - band.top(xm);
+    // мелкие строки читаем с увеличением (толстые после сглаживания штрихи слипаются)
+    const ext = 0.25, hbS = Math.max(26, Math.min(44, Math.round(hb*0.85))), n = Math.round(hbS*(1 + 2*ext));
+    const Z = sampleStrip(P, band, xa, xb, -ext, 1 + ext, n), w = Z.w, S = Z.S, step = Z.step;
+    const rT = Math.floor(n*ext/(1 + 2*ext)) - 1, rB = Math.ceil(n*(1 + ext)/(1 + 2*ext)) + 1;
+    const ra = Math.round(n*(ext + 0.05)/(1 + 2*ext)), rb = Math.round(n*(ext + 0.95)/(1 + 2*ext));
+    // 1) вертикальные линии сетки: столбец темнее фона и выше, и ниже строки, и почти по всей её высоте
+    const zt = new Float32Array(w), zb = new Float32Array(w);
+    for(let i=0;i<w;i++){
+      let a = 0, bb = 0; for(let r=0;r<rT;r++) a += S[r*w+i]; for(let r=rB;r<n;r++) bb += S[r*w+i];
+      zt[i] = rT > 0 ? a/rT : 255; zb[i] = n - rB > 0 ? bb/(n - rB) : 255;
+    }
+    const inAll = []; for(let i=0;i<w;i+=2) for(let r=ra;r<=rb;r+=2) inAll.push(S[r*w+i]);
+    const mi = percentile(inAll, 60), mt = percentile(zt, 60), mbq = percentile(zb, 60);
+    const lineCol = new Uint8Array(w);
+    // линии сетки бывают только у границ клеток
+    const nearB = new Uint8Array(w), tolB = Math.max(2, 0.12*b/step);
+    for(let d=1; d<=nd+1; d++){
+      const xB = d <= nd ? cellL[d] : cellR[nd], ic = (xB - xa)/step;
+      for(let i=Math.max(0, Math.floor(ic - tolB)); i<=Math.min(w-1, Math.ceil(ic + tolB)); i++) nearB[i] = 1;
+    }
+    for(let i=0;i<w;i++){
+      if(!nearB[i]) continue;
+      if(!(zt[i] < mt - 7 && zb[i] < mbq - 7)) continue;
+      let c = 0, t = 0; for(let r=ra;r<=rb;r++){ t++; if(S[r*w+i] < mi - 7) c++; }
+      if(c/t >= 0.8) lineCol[i] = 1;
+    }
+    // линия узкая; широкая тёмная полоса — это заливка (выходные), её не трогаем
+    const maxLW = Math.max(3, 0.1*b/step);
+    for(let i=0;i<w;){ if(lineCol[i]){ let j = i; while(j+1 < w && lineCol[j+1]) j++; if(j - i + 1 > maxLW) for(let q=i;q<=j;q++) lineCol[q] = 0; i = j+1; } else i++; }
+    const S2 = new Float32Array(S);
+    for(let i=0;i<w;i++) if(lineCol[i] || (i > 0 && lineCol[i-1]) || (i < w-1 && lineCol[i+1])){
+      // заменяем на фон этого места (соседние столбцы), а не на общий
+      let a = i - 2; while(a > 0 && (lineCol[a] || lineCol[a+1])) a--;
+      let c = i + 2; while(c < w - 1 && (lineCol[c] || lineCol[c-1])) c++;
+      for(let r=0;r<n;r++) S2[r*w+i] = Math.max(S[r*w+Math.max(0, a)], S[r*w+Math.min(w-1, c)]);
+    }
+    // 2) «чернила» — по местному фону: цифра — тонкий штрих темнее своего окружения;
+    //    большая ровная заливка (выходные, выделение) внутри себя «чернилами» не считается
+    const M = IMP_CFG.localInk ? localInkMask(S2, w, n, Math.max(3, Math.round(0.32*hbS)), Math.round(n*(ext + 0.15)/(1 + 2*ext)), Math.round(n*(ext + 0.85)/(1 + 2*ext)))
+                               : inkMask({ S:S2, w:w, n:n }, true, n*(ext + 0.15)/(1 + 2*ext), n*(ext + 0.85)/(1 + 2*ext), P.scale >= 2 ? IMP_CFG.lowResRatio : 0.35);
+    // горизонтальные линии: длинные сплошные отрезки (цифра не шире клетки)
+    const maxRun = Math.max(8, 0.6*b/step);
+    for(let r=0;r<n;r++) for(let i=0;i<w;){
+      if(M[r*w+i]){ let j = i; while(j+1 < w && M[r*w+j+1]) j++; if(j - i + 1 > maxRun) for(let q=i;q<=j;q++) M[r*w+q] = 0; i = j+1; } else i++;
+    }
+    // и прерывистые линии: в пределах клетки строка почти вся тёмная (+ её размытые края); у краёв строки — хватает половины
+    const yc0L = n*(ext + 0.2)/(1 + 2*ext), yc1L = n*(ext + 0.8)/(1 + 2*ext);
+    for(let d=1; d<=nd; d++){
+      const i0 = Math.max(0, Math.round((cellL[d] - xa)/step)), i1 = Math.min(w - 1, Math.round((cellR[d] - xa)/step));
+      if(i1 - i0 < 3) continue;
+      const cw = i1 - i0 + 1, rc = new Float32Array(n), kill = new Uint8Array(n);
+      for(let r=0;r<n;r++){ let c = 0; for(let i=i0;i<=i1;i++) c += M[r*w+i]; rc[r] = c/cw; if(rc[r] >= ((r < yc0L || r > yc1L) ? 0.5 : 0.75)) kill[r] = 1; }
+      for(let pass=0; pass<2; pass++) for(let r=0;r<n;r++) if(!kill[r] && rc[r] >= 0.35 && ((r > 0 && kill[r-1]) || (r < n-1 && kill[r+1]))) kill[r] = 1;
+      for(let r=0;r<n;r++) if(kill[r]) for(let i=i0;i<=i1;i++) M[r*w+i] = 0;
+    }
+    for(let r=0;r<n;r++) if(r < ra || r > rb) for(let i=0;i<w;i++) M[r*w+i] = 0;
+    // точное положение верхней и нижней линии в каждой клетке (полоса могла чуть сместиться) — всё за ними убираем
+    const fRow = function(f){ return Math.round(n*(ext + f)/(1 + 2*ext)); };
+    {
+      // сначала — по всей строке: линия идёт через все клетки, поэтому даже бледная она темнее фона почти во всех столбцах,
+      // а строка с цифрами — только в немногих
+      const colBg = new Float32Array(w), colTmp = new Float32Array(n);
+      for(let i=0;i<w;i++){ for(let r=0;r<n;r++) colTmp[r] = S2[r*w+i]; colBg[i] = percentile(colTmp, 75); }
+      const cover = new Float32Array(n);
+      for(let r=0;r<n;r++){ let c = 0; for(let i=0;i<w;i++) if(S2[r*w+i] < colBg[i] - 10) c++; cover[r] = c/w; }
+      let tA = -1, bA = -1;
+      for(let r=Math.max(0, fRow(-0.15)); r<=fRow(0.22); r++) if(cover[r] >= 0.55) tA = r;
+      for(let r=Math.min(n - 1, fRow(1.15)); r>=fRow(0.78); r--) if(cover[r] >= 0.55) bA = r;
+      if(tA >= 0) for(let r=0;r<=tA+1;r++) for(let i=0;i<w;i++) M[r*w+i] = 0;
+      if(bA >= 0) for(let r=bA-1;r<n;r++) for(let i=0;i<w;i++) M[r*w+i] = 0;
+    }
+    for(let d=1; d<=nd; d++){
+      const i0 = Math.max(0, Math.round((cellL[d] - xa)/step) + 1), i1 = Math.min(w - 1, Math.round((cellR[d] - xa)/step) - 1);
+      if(i1 - i0 < 3) continue;
+      const cw = i1 - i0 + 1, rm = new Float32Array(n);
+      for(let r=0;r<n;r++){ let sm = 0; for(let i=i0;i<=i1;i++) sm += S2[r*w+i]; rm[r] = sm/cw; }
+      const medR = percentile(Array.prototype.slice.call(rm, fRow(0.2), fRow(0.8) + 1), 70);
+      // строка-линия: тёмная почти по всей ширине клетки (цифра так не может)
+      const lineRow = function(r){ let c = 0; for(let i=i0;i<=i1;i++) if(S2[r*w+i] < medR - 20) c++; return c >= 0.75*cw; };
+      let tB = -1, bB = -1;
+      for(let r=Math.max(0, fRow(-0.15)); r<=fRow(0.35); r++) if(rm[r] < medR - 15 && lineRow(r)) tB = r;           // нижний край верхней линии
+      for(let r=Math.min(n - 1, fRow(1.15)); r>=fRow(0.65); r--) if(rm[r] < medR - 15 && lineRow(r)) bB = r;        // верхний край нижней линии
+      if(tB >= 0) for(let r=0;r<=tB+1;r++) for(let i=i0-1;i<=i1+1;i++) if(i >= 0 && i < w) M[r*w+i] = 0;
+      if(bB >= 0) for(let r=bB-1;r<n;r++) for(let i=i0-1;i<=i1+1;i++) if(i >= 0 && i < w) M[r*w+i] = 0;
+    }
+    removeThinRuns(M, w, n, Math.max(5, Math.round(0.4*hbS)));
+    // 3) связные области → знаки
+    const cc = components(M, w, n, Math.max(4, Math.round(0.012*hbS*hbS)));
+    const yc0 = n*(ext + 0.2)/(1 + 2*ext), yc1 = n*(ext + 0.8)/(1 + 2*ext), bandRows = rb - ra + 1;
+    if(window.__WC_TEST__) readRowGlyphs.dbg = { M:M, S:S, S2:S2, w:w, n:n, lineCol:lineCol, xa:xa, step:step, comps:cc.comps };
+    const main = cc.comps.filter(function(c){
+      const hh = c.y1 - c.y0 + 1, ww = c.x1 - c.x0 + 1;
+      if(!(c.y0 < yc1 && c.y1 > yc0 && hh >= 0.25*hbS && hh <= 1.15*hbS)) return false;
+      if(hh >= bandRows - 2 && ww <= 0.2*hbS) return false;    // остаток вертикальной линии
+      if(hh < 0.35*hbS && ww > 0.8*hbS) return false;          // полоска
+      if(ww >= 1.6*hh && c.area >= 0.72*ww*hh) return false;    // сплошной широкий прямоугольник (заливка) — не цифра
+      if(ww <= Math.max(2, 0.07*hbS)) return false;              // волосок (обрывок линии) — даже «1» толще
+      return true;
     });
-    const line = new Uint8Array(w);
-    for(let i=0;i<w;i++) line[i] = (zfrac[0][i] >= 0.5 && zfrac[1][i] >= 0.5 && (zfrac[2][i] >= 0.5 || zfrac[3][i] >= 0.5)) ? 1 : 0;
-    const lx = new Uint8Array(w);
-    for(let i=0;i<w;i++) lx[i] = line[i] | (i>0 ? line[i-1] : 0) | (i<w-1 ? line[i+1] : 0);
-    const glyph = new Uint8Array(w);
-    for(let i=0;i<w;i++){ let c = 0; for(let r=0;r<n;r++) c += strict[r*w+i]; glyph[i] = (c/n >= 0.2 && !lx[i]) ? 1 : 0; }
-    const extOf = function(i0, i1){ let e = 0; for(let r=0;r<n;r++){ for(let i=i0;i<=i1;i++){ if(strict[r*w+i]){ e++; break; } } } return e/n; };
-    const blobs = [];
-    for(let i=0;i<w;){
-      if(glyph[i]){ let j = i; while(j+1 < w && glyph[j+1]) j++; if(extOf(i, j) >= 0.15) blobs.push([i, j]); i = j+1; }
+    const attached = cc.comps.filter(function(c){
+      if(main.indexOf(c) >= 0) return false;
+      return main.some(function(m){
+        const ov = Math.min(m.x1, c.x1) - Math.max(m.x0, c.x0);
+        if(ov <= 0.4*(c.x1 - c.x0 + 1)) return false;
+        return Math.max(m.y1, c.y1) - Math.min(m.y0, c.y0) + 1 <= 1.0*hbS && c.y1 >= m.y0 - 0.2*hbS && c.y0 <= m.y1 + 0.2*hbS;
+      });
+    });
+    const comps = main.concat(attached).sort(function(a, c){ return a.x0 - c.x0; });
+    const gl = [];
+    comps.forEach(function(c){
+      const g = gl[gl.length-1];
+      if(g && c.x0 <= g.x1 - 0.3*(c.x1 - c.x0 + 1)){ g.x1 = Math.max(g.x1, c.x1); g.y0 = Math.min(g.y0, c.y0); g.y1 = Math.max(g.y1, c.y1); g.ids[c.id] = 1; g.main = g.main || main.indexOf(c) >= 0; }
+      else { const o = { x0:c.x0, x1:c.x1, y0:c.y0, y1:c.y1, ids:{}, main:main.indexOf(c) >= 0 }; o.ids[c.id] = 1; gl.push(o); }
+    });
+    // 4) знак → день по его центру
+    const byDay = {};
+    const dayOfXc = function(x){ for(let d=1; d<=nd; d++) if(x >= cellL[d] && x < cellR[d]) return d; return 0; };
+    gl.forEach(function(g){
+      if(!g.main) return;
+      const d = dayOfXc(xa + step*(g.x0 + g.x1)/2);
+      if(d) (byDay[d] = byDay[d] || []).push(g);
+    });
+    const L = cc.L, res = {};
+    if(window.__WC_TEST__){ readRowGlyphs.dbg.byDay = {}; Object.keys(byDay).forEach(function(k){ readRowGlyphs.dbg.byDay[k] = byDay[k].map(function(g){ return [g.x0, g.x1, g.y0, g.y1]; }); }); readRowGlyphs.dbg.M2 = M; }
+    Object.keys(byDay).forEach(function(k){
+      const d = +k, gs = byDay[d];
+      if(gs.length > 2){ res[d] = 'text'; return; }
+      let glyphs = [];
+      gs.forEach(function(g){
+        const gw = g.x1 - g.x0 + 1, gh = g.y1 - g.y0 + 1;
+        const inG = function(x, y){ return g.ids[L[y*w+x]] ? 1 : 0; };
+        if(gw > 0.95*gh && gs.length === 1){
+          let bx = -1, bc = 1e9;
+          for(let x=g.x0 + Math.round(0.3*gw); x<=g.x0 + Math.round(0.7*gw); x++){ let c = 0; for(let y=g.y0;y<=g.y1;y++) c += inG(x, y); if(c < bc){ bc = c; bx = x; } }
+          const sub = function(a, c2){ let y0 = 1e9, y1 = -1; for(let y=g.y0;y<=g.y1;y++) for(let x=a;x<=c2;x++) if(inG(x, y)){ if(y<y0)y0=y; if(y>y1)y1=y; } return y1 >= 0 ? { x0:a, x1:c2, y0:y0, y1:y1 } : null; };
+          const A = sub(g.x0, bx - 1), B = sub(bx + 1, g.x1);
+          if(A && B){ glyphs.push({ r:A, get:inG }); glyphs.push({ r:B, get:inG }); return; }
+        }
+        glyphs.push({ r:g, get:inG });
+      });
+      if(glyphs.length > 2){ res[d] = 'text'; return; }
+      const probs = glyphs.map(function(q){ const cl = mlpClassify(glyphFeatures(q.get, q.r.x0, q.r.x1, q.r.y0, q.r.y1, hbS)); return cl ? cl.probs : null; });
+      if(window.__WC_TEST__){ (readRowGlyphs.dbg.probs = readRowGlyphs.dbg.probs || {})[d] = probs.map(function(p){ return p ? Array.from(p).map(function(x){ return +x.toFixed(2); }) : null; }); }
+      if(probs.some(function(p){ return !p; })){ res[d] = '?'; return; }
+      const junk = Math.max.apply(null, probs.map(function(p){ return p[10]; }));
+      if(junk > 0.85){ res[d] = 'text'; return; }
+      let best = null, tot = 0;
+      for(let val=1; val<=24; val++){
+        const ds = String(val); if(ds.length !== glyphs.length) continue;
+        let lp = Math.log(valuePrior(val));
+        for(let q=0;q<ds.length;q++) lp += Math.log(Math.max(1e-4, probs[q][+ds[q]] + 0.02*probs[q][10]));
+        const e = Math.exp(lp); tot += e;
+        if(!best || lp > best.lp) best = { v:val, lp:lp, e:e };
+      }
+      res[d] = best && best.e/Math.max(1e-12, tot) >= 0.5 ? best.v : '?';
+    });
+    return res;
+  }
+  // Значение клетки строки: null — пусто; {v} — число 1…24; {v:null} — что-то есть, но не прочитано; {text} — буквы
+  function readCellValue(P, band, xa, xb){
+    const r = readCellNumber(P, band, xa, xb, 24, true);
+    if(!r) return null;
+    if(r.text) return { text:true };
+    if(r.v != null) return { v:r.v, p:r.p };
+    return { v:null };
+  }
+
+
+  // ---------- своя шапка: сетка столбцов дней + числа 1..N по эталонам цифр ----------
+  // Не зависит от OCR: ищем полосу таблицы, где вертикальные линии идут с ровным шагом,
+  // а в клетках стоят числа, растущие на 1.
+  function bandSeparators(P, band, x0, x1){
+    const G = P.G, W = P.W, Hh = P.H, NS = 16;
+    const xa = Math.max(1, Math.floor(x0)), xb = Math.min(W-2, Math.ceil(x1));
+    const len = xb - xa + 1; if(len < 30) return [];
+    const vals = new Float32Array(len*NS);
+    for(let i=0;i<len;i++){
+      const x = xa + i, t = band.top(x), h = band.bot(x) - t;
+      for(let r=0;r<NS;r++){ const y = Math.round(t + (0.08 + 0.84*r/(NS-1))*h); vals[i*NS+r] = (y >= 0 && y < Hh) ? G[y*W+x] : 255; }
+    }
+    const dark = new Uint8Array(len*NS);
+    for(let c0=0;c0<len;c0+=96){
+      const c1 = Math.min(len, c0+96), bg = percentile(vals.subarray(c0*NS, c1*NS), 70), thr = bg - 22;
+      for(let k=c0*NS;k<c1*NS;k++) dark[k] = vals[k] < thr ? 1 : 0;
+    }
+    const cov = new Float32Array(len);
+    for(let i=0;i<len;i++){
+      let c = 0;
+      for(let r=0;r<NS;r++){ if(dark[i*NS+r] || (i > 0 && dark[(i-1)*NS+r]) || (i < len-1 && dark[(i+1)*NS+r])) c++; }
+      cov[i] = c/NS;
+    }
+    const hb = band.bot((x0+x1)/2) - band.top((x0+x1)/2), maxW = Math.max(4, 0.3*hb);
+    const xs = [];
+    for(let i=0;i<len;){
+      if(cov[i] >= 0.86){ let j = i; while(j+1 < len && cov[j+1] >= 0.86) j++; if(j - i + 1 <= maxW) xs.push(xa + (i + j)/2); i = j+1; }
       else i++;
     }
-    const cells = {};
-    blobs.forEach(function(bl){
-      const d = Math.round(dayOfX(H, xs0 + (bl[0]+bl[1])/2, nd));
-      if(d >= 1 && d <= nd) (cells[d] = cells[d] || []).push(bl);
-    });
-    const res = {}, spans = {};
-    Object.keys(cells).forEach(function(k){
-      const d = +k, bl = cells[d];
-      const i0 = Math.min.apply(null, bl.map(function(x){ return x[0]; })), i1 = Math.max.apply(null, bl.map(function(x){ return x[1]; }));
-      const X0 = xs0 + i0, h = band.bot(X0) - band.top(X0);
-      if(extOf(i0, i1) < 0.35) return;               // слишком низкий знак — не цифра
-      const span = Math.max(1, (i1 - i0 + 1) - 2);   // минус расширение на 1 px с каждой стороны
-      if(span > 1.1*b){ res[d] = 'text'; return; }   // надпись через несколько клеток («предварительно»)
-      if(span >= 0.3*h){ res[d] = '?'; spans[d] = [i0, i1]; }
-      else res[d] = 1;
-    });
-    // двузначные значения: сначала — числа, которые прочитал движок распознавания текста;
-    // если он клетку пропустил — сравниваем цифры с эталонами в полном разрешении фото
-    Object.keys(spans).forEach(function(k){
-      const d = +k, i0 = spans[d][0], i1 = spans[d][1];
-      const X0 = xs0 + i0, X1 = xs0 + i1, h = band.bot(X0) - band.top(X0);
-      const ymid = (band.top((X0+X1)/2) + band.bot((X0+X1)/2)) / 2;
-      const hit = (words||[]).filter(function(t){
-        return /^\d{1,2}$/.test(t.text) && t.x0 < X1 + 2 && t.x1 > X0 - 2 && Math.abs(t.yc - ymid) < 0.5*h && +t.text >= 2 && +t.text <= 24;
+    return xs;
+  }
+  function regularChain(xs, minD){
+    let best = null;
+    for(let s=0; s<xs.length-1; s++){
+      const d0 = xs[s+1] - xs[s]; if(d0 < minD) continue;
+      const ch = [xs[s], xs[s+1]]; let j = s+1, dp = d0;
+      while(j+1 < xs.length){
+        const dn = xs[j+1] - xs[j];
+        if(Math.abs(dn - dp) <= 0.22*dp){ ch.push(xs[j+1]); dp = 0.7*dp + 0.3*dn; j++; continue; }
+        if(dn < 0.78*dp && j+2 < xs.length && Math.abs((xs[j+2] - xs[j]) - dp) <= 0.22*dp){ ch.push(xs[j+2]); dp = 0.7*dp + 0.3*(xs[j+2] - xs[j]); j += 2; continue; }
+        if(Math.abs(dn - 2*dp) <= 0.3*dp){ ch.push(xs[j] + dn/2); ch.push(xs[j+1]); j++; continue; }
+        break;
+      }
+      if(!best || ch.length > best.length) best = ch;
+      if(best.length > xs.length - s) break;
+    }
+    return best;
+  }
+  // Числа целиком (1…31) как эталоны — разными шрифтами, обычным и жирным
+  const NUM_H = 16, NUM_W = 20;
+  let numTpl = null;
+  function numTemplates(){
+    if(numTpl) return numTpl;
+    numTpl = [];
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently:true });
+    c.width = 160; c.height = 110;
+    SPOT_FONTS.forEach(function(f){
+      [false, true].forEach(function(bold){
+        for(let v=1; v<=31; v++){
+          ctx.clearRect(0, 0, 160, 110);
+          ctx.font = (bold ? 'bold ' : '') + '64px ' + f; ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+          ctx.fillText(String(v), 16, 84);
+          const d = ctx.getImageData(0, 0, 160, 110).data;
+          let x0 = 160, x1 = -1, y0 = 110, y1 = -1;
+          for(let y=0;y<110;y++) for(let x=0;x<160;x++) if(d[(y*160+x)*4+3] > 127){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+          if(x1 < 0) continue;
+          const vec = maskVec(function(x, y){ return d[(y*160+x)*4+3]/255; }, Math.max(0, x0-1), Math.min(159, x1+1), Math.max(0, y0-1), Math.min(109, y1+1), NUM_H, NUM_W);
+          if(vec) numTpl.push({ v:v, t:vec });
+        }
       });
-      const two = hit.filter(function(t){ return t.text.length === 2; });
-      if(two.length){ res[d] = +two[0].text; return; }
-      const hn = Math.max(24, Math.round(0.78*h));
-      const Z = sampleBand(P, band, X0, X1 + 1, 0.12, 0.9, hn), zw = Z.w;
-      const zb = new Float32Array(zw), zc = new Float32Array(hn);
-      for(let i=0;i<zw;i++){ for(let r=0;r<hn;r++) zc[r] = Z.S[r*zw+i]; zb[i] = Math.max(bg[i0+i] || 0, percentile(zc, 75)); }
-      const m0 = new Uint8Array(hn*zw), cols = new Uint8Array(zw);
-      for(let i=0;i<zw;i++){
-        if(lx[i0+i]) continue; // линии сетки не трогаем
-        const thr = Math.max(30, 0.35*Math.max(1, zb[i]-tl));
-        for(let r=0;r<hn;r++) if(zb[i]-Z.S[r*zw+i] > thr){ m0[r*zw+i] = 1; cols[i] = 1; }
+    });
+    return numTpl;
+  }
+  // Число в клетке: всё содержимое клетки сравниваем с эталонами чисел (null — клетка пустая)
+  // ---------- распознавание цифр: маленькая нейросеть, обученная на тысячах искажённых цифр разных шрифтов ----------
+  const DIGIT_MLP = /*DIGIT_MLP*/{"w0":"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","s0":0.012728932313621044,"b0":[-0.13394,-0.016,0.04696,-0.12517,0.05781,-0.14066,0.08175,-0.10162,-0.03575,-0.15047,0.26176,-0.1814,-0.18976,0.12962,-0.02505,0.0994,-0.2476,0.08771,0.14324,-0.13047,-0.13336,-0.25076,0.10638,0.07795,-0.08788,0.2305,-0.09364,-0.18436,0.04757,0.26481,0.24825,0.09954,0.02379,0.2266,0.0637,-0.10012,0.14428,0.23309,-0.01269,0.01157,0.16751,0.33704,-0.16673,-0.01963,-0.12296,0.16773,-0.19306,0.07385,-0.06923,-0.00799,-0.06034,0.02617,-0.19808,0.15188,-0.16171,-0.10361,-0.11516,0.2394,-0.14983,0.11055,0.0113,-0.06076,-0.07102,-0.00219,0.07658,0.10606,0.17357,0.0887,0.04967,0.04171,-0.07793,-0.04619,-0.04478,-0.05916,0.11321,0.09272,0.27214,-0.11681,-0.01358,0.05018,0.24616,-0.00255,-0.03481,-0.03879,0.08511,-0.01468,0.12446,0.03414,0.00213,-0.05138,0.0854,0.00629,-0.01369,0.14098,-0.24276,-0.01698,0.06906,-0.20249,-0.10799,-0.0269,-0.07362,-0.1291,-0.01492,0.12185,-0.16302,-0.14116,0.16854,0.00053,0.03398,-0.06994,-0.01811,0.05491,0.07581,0.22972,-0.04525,-0.10622,0.21226,0.09039,0.09307,0.11207,-0.07179,0.16098,0.12392,-0.09285,-0.00472,-0.0571,-0.13862,-0.00259,0.1046,0.22049,0.03155,0.12997,-0.17562,0.09231,0.00749,-0.18454,-0.10337,-0.17934,0.03075,0.10881,0.0092,0.08417,-0.13082,-0.11342,0.07964,0.00153,-0.09334,-0.00071,-0.21645,-0.05574,0.13716,0.12864,-0.04437,-0.04614,0.14203,-0.202,-0.04021,-0.1768,0.07479,-0.32435],"shape0":[194,160],"w1":"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","s1":0.013752559199929237,"b1":[-0.19516,-0.13379,0.03765,0.02737,-0.20718,0.02358,-0.08309,0.23209,-0.07836,0.08214,0.21414],"shape1":[160,11]};
+  let mlp = null;
+  function mlpModel(){
+    if(mlp || !DIGIT_MLP) return mlp;
+    const dec = function(b64, sc, shape){
+      const bin = atob(b64), q = new Int8Array(bin.length);
+      for(let i=0;i<bin.length;i++){ const c = bin.charCodeAt(i); q[i] = c > 127 ? c - 256 : c; }
+      const W = new Float32Array(q.length); for(let i=0;i<q.length;i++) W[i] = q[i]*sc;
+      return { W:W, rows:shape[0], cols:shape[1] };
+    };
+    mlp = [];
+    for(let li=0; DIGIT_MLP['w'+li]; li++){
+      const L = dec(DIGIT_MLP['w'+li], DIGIT_MLP['s'+li], DIGIT_MLP['shape'+li]);
+      L.b = Float32Array.from(DIGIT_MLP['b'+li]); mlp.push(L);
+    }
+    return mlp;
+  }
+  const GL_H = 16, GL_W = 12;
+  function resampleRows(src, dst){
+    const R = [];
+    for(let t=0;t<dst;t++){
+      const a = t*src/dst, b = (t+1)*src/dst, row = []; let s = 0;
+      for(let x=Math.floor(a); x<Math.ceil(b); x++){ const w = Math.min(x+1, b) - Math.max(x, a); if(w > 0){ row.push([x, w]); s += w; } }
+      row.forEach(function(e){ e[1] /= s; }); R.push(row);
+    }
+    return R;
+  }
+  // Признаки знака (точно как при обучении): маска → 16×12 с сохранением пропорций + пропорция + относительная высота
+  function glyphFeatures(get, x0, x1, y0, y1, cellH){
+    const h = y1 - y0 + 1, w = x1 - x0 + 1;
+    const s = Math.min(GL_H/h, GL_W/w);
+    const nh = Math.max(1, Math.min(GL_H, Math.round(h*s))), nw = Math.max(1, Math.min(GL_W, Math.round(w*s)));
+    const Ry = resampleRows(h, nh), Rx = resampleRows(w, nw);
+    const F = new Float32Array(GL_H*GL_W + 2), oy = (GL_H - nh) >> 1, ox = (GL_W - nw) >> 1;
+    for(let ty=0; ty<nh; ty++) for(let tx=0; tx<nw; tx++){
+      let v = 0;
+      Ry[ty].forEach(function(ey){ Rx[tx].forEach(function(ex){ v += get(x0 + ex[0], y0 + ey[0])*ey[1]*ex[1]; }); });
+      F[(oy + ty)*GL_W + ox + tx] = v;
+    }
+    F[GL_H*GL_W] = Math.max(-2.5, Math.min(1.5, Math.log(w/h)));
+    F[GL_H*GL_W + 1] = Math.max(0, Math.min(1.5, h/cellH));
+    return F;
+  }
+  function mlpClassify(F){
+    const net = mlpModel(); if(!net) return null;
+    let x = F;
+    for(let li=0; li<net.length; li++){
+      const L = net[li], y = new Float32Array(L.cols);
+      for(let j=0;j<L.cols;j++) y[j] = L.b[j];
+      for(let i=0;i<L.rows;i++){ const xi = x[i]; if(!xi) continue; const off = i*L.cols; for(let j=0;j<L.cols;j++) y[j] += xi*L.W[off+j]; }
+      if(li < net.length - 1) for(let j=0;j<L.cols;j++) if(y[j] < 0) y[j] = 0;
+      x = y;
+    }
+    let m = -1e9; for(let j=0;j<x.length;j++) if(x[j] > m) m = x[j];
+    let s = 0; const p = new Float32Array(x.length); for(let j=0;j<x.length;j++){ p[j] = Math.exp(x[j] - m); s += p[j]; }
+    let bi = 0; for(let j=0;j<x.length;j++){ p[j] /= s; if(p[j] > p[bi]) bi = j; }
+    return { c:bi, p:p[bi], probs:p };   // c = 0…9 — цифра, 10 — не цифра
+  }
+  function readCellNumber(P, band, xa, xb, maxV, rowMode){
+    const xm = (xa + xb)/2, hb = band.bot(xm) - band.top(xm);
+    // клетку берём с запасом сверху и снизу: цифры могут выступать за середину строки,
+    // а линии сетки тянутся через весь запас — так их легко отличить от цифр
+    const ext = 0.25, hbS = Math.max(26, Math.min(44, Math.round(hb*0.85)));   // мелкое — с увеличением
+    const n = Math.round(hbS*(1 + 2*ext));
+    const Z = sampleStrip(P, band, xa, xb, -ext, 1 + ext, n);
+    // вертикальные линии сетки у краёв клетки (даже светлые): столбец темнее обычного по всей высоте
+    let cL = 0, cR = Z.w - 1;
+    {
+      // линия тянется и выше, и ниже клетки (в запасе сверху и снизу), а цифра — нет
+      const w0 = Z.w, rT = Math.floor(n*ext/(1 + 2*ext)) - 1, rB = Math.ceil(n*(1 + ext)/(1 + 2*ext)) + 1;
+      const zt = new Float32Array(w0), zb = new Float32Array(w0);
+      for(let i=0;i<w0;i++){
+        let a = 0, ca = 0, bb = 0, cb = 0;
+        for(let r=0;r<rT;r++){ a += Z.S[r*w0+i]; ca++; }
+        for(let r=rB;r<n;r++){ bb += Z.S[r*w0+i]; cb++; }
+        zt[i] = ca ? a/ca : 255; zb[i] = cb ? bb/cb : 255;
       }
-      let groups = [];
-      for(let i=0;i<zw;){ if(cols[i]){ let j = i; while(j+1 < zw && cols[j+1]) j++; groups.push([i, j]); i = j+1; } else i++; }
-      const rowsOf = function(g){ let e = 0; for(let r=0;r<hn;r++){ for(let i=g[0];i<=g[1];i++){ if(m0[r*zw+i]){ e++; break; } } } return e/hn; };
-      groups = groups.filter(function(g){ return rowsOf(g) >= 0.3; });
-      while(groups.length > 2){ // склеиваем по наименьшему промежутку
-        let bi = 0, bgap = 1e9;
-        for(let q=0;q<groups.length-1;q++){ const gap = groups[q+1][0]-groups[q][1]; if(gap < bgap){ bgap = gap; bi = q; } }
-        groups.splice(bi, 2, [groups[bi][0], groups[bi+1][1]]);
+      const mt = median(zt), mb = median(zb);
+      // и внутри клетки она тёмная почти по всей высоте (у цифры «1» — только посередине)
+      const inner = new Float32Array(w0), rI0 = rT + 2, rI1 = rB - 2;
+      let allIn = []; for(let i=0;i<w0;i++) for(let r=rI0;r<=rI1;r+=2) allIn.push(Z.S[r*w0+i]);
+      const mi = percentile(allIn, 60);
+      for(let i=0;i<w0;i++){ let c = 0, t = 0; for(let r=rI0;r<=rI1;r++){ t++; if(Z.S[r*w0+i] < mi - 7) c++; } inner[i] = t ? c/t : 0; }
+      const isLine = function(i){ return zt[i] < mt - 7 && zb[i] < mb - 7 && inner[i] >= 0.8; };
+      if(IMP_CFG.zoneLines){
+        for(let i=0;i<Math.floor(0.25*w0);i++) if(isLine(i)) cL = i + 1;
+        for(let i=w0-1;i>=Math.ceil(0.75*w0);i--) if(isLine(i)) cR = i - 1;
       }
+    }
+    // уровень «чернил» — по середине клетки по высоте (горизонтальные линии темнее цифр), по ширине — между линиями
+    const M = inkMask(Z, true, n*(ext + 0.15)/(1 + 2*ext), n*(ext + 0.85)/(1 + 2*ext), 0.35, cL, cR), w = Z.w;
+    for(let i=0;i<w;i++){ if(i < cL || i > cR){ for(let r=0;r<n;r++) M[r*w+i] = 0; continue; } let c = 0; for(let r=0;r<n;r++) c += M[r*w+i]; if(c >= 0.85*n) for(let r=0;r<n;r++) M[r*w+i] = 0; }
+    {
+      // горизонтальные линии и тёмные полосы: строки почти целиком тёмные, плюс их «размытые» края
+      const rc = new Float32Array(n), kill = new Uint8Array(n);
+      for(let r=0;r<n;r++){ let c = 0; for(let i=0;i<w;i++) c += M[r*w+i]; rc[r] = c/w; if(rc[r] >= 0.75) kill[r] = 1; }
+      for(let pass=0; pass<2; pass++) for(let r=0;r<n;r++) if(!kill[r] && rc[r] >= 0.35 && ((r > 0 && kill[r-1]) || (r < n-1 && kill[r+1]))) kill[r] = 1;
+      for(let r=0;r<n;r++) if(kill[r]) for(let i=0;i<w;i++) M[r*w+i] = 0;
+    }
+    let bandRows = n;
+    if(rowMode){
+      // строка ограничена линиями таблицы: всё, что за ними (и сами линии), не смотрим
+      const ra = Math.round(n*(ext + 0.05)/(1 + 2*ext)), rb = Math.round(n*(ext + 0.95)/(1 + 2*ext));
+      bandRows = rb - ra + 1;
+      for(let r=0;r<n;r++) if(r < ra || r > rb) for(let i=0;i<w;i++) M[r*w+i] = 0;
+    }
+    const cc = components(M, w, n, Math.max(4, Math.round(0.012*hbS*hbS)));
+    const yc0 = n*(ext + 0.2)/(1 + 2*ext), yc1 = n*(ext + 0.8)/(1 + 2*ext);
+    if(window.__WC_TEST__){ let t = ''; for(let r=0;r<n;r++){ let l = ''; for(let i=0;i<w;i++) l += M[r*w+i] ? '#' : '.'; t += l + '\n'; } readCellNumber.dbg = { cL:cL, cR:cR, w:w, n:n, hbS:hbS, comps:cc.comps.map(function(c){ return [c.x0,c.x1,c.y0,c.y1,c.area]; }), mask:t }; }
+    const main = cc.comps.filter(function(c){
+      const hh = c.y1 - c.y0 + 1, ww = c.x1 - c.x0 + 1;
+      if(!(c.y0 < yc1 && c.y1 > yc0 && hh >= 0.25*hbS && hh <= 1.15*hbS)) return false;
+      // рамка выделения/линия у края клетки: высокая узкая черта, касающаяся края
+      if((c.x0 <= 0 || c.x1 >= w - 1) && hh >= 0.85*hbS && ww <= 0.25*hbS) return false;
+      // вертикальная линия во всю высоту строки (цифра так высоко не бывает)
+      if(rowMode && hh >= bandRows - 2 && ww <= 0.2*hbS) return false;
+      // плоские полоски (край заливки, подчёркивание) — не цифры
+      if(hh < 0.35*hbS && ww > 0.8*hbS) return false;
+      return true;
+    });
+    if(!main.length) return null;
+    // части той же цифры, распавшейся на куски (тонкий штрих «2», «5»), — рядом по вертикали и под/над основным куском
+    const my0 = Math.min.apply(null, main.map(function(c){ return c.y0; })), my1 = Math.max.apply(null, main.map(function(c){ return c.y1; }));
+    const comps = main.concat(cc.comps.filter(function(c){
+      if(main.indexOf(c) >= 0) return false;
+      if(c.y1 < my0 - 0.2*hbS || c.y0 > my1 + 0.2*hbS) return false;
+      if(Math.max(my1, c.y1) - Math.min(my0, c.y0) + 1 > 1.0*hbS) return false;   // вместе выше строки — не часть цифры
+      return main.some(function(m){ const ov = Math.min(m.x1, c.x1) - Math.max(m.x0, c.x0); return ov > 0.4*(c.x1 - c.x0 + 1); });
+    })).sort(function(a, b){ return a.x0 - b.x0; });
+    if(comps.length > 4) return { v:null, hPx:0, text:!!rowMode };
+    // знаки: области, перекрывающиеся по горизонтали, — один знак
+    const gl = [];
+    comps.forEach(function(c){
+      const g = gl[gl.length-1];
+      if(g && c.x0 <= g.x1 - 0.3*(c.x1 - c.x0 + 1)){ g.x1 = Math.max(g.x1, c.x1); g.y0 = Math.min(g.y0, c.y0); g.y1 = Math.max(g.y1, c.y1); g.ids[c.id] = 1; }
+      else { const o = { x0:c.x0, x1:c.x1, y0:c.y0, y1:c.y1, ids:{} }; o.ids[c.id] = 1; gl.push(o); }
+    });
+    const L = cc.L;
+    const glyphs = [];
+    gl.forEach(function(g){
+      const gw = g.x1 - g.x0 + 1, gh = g.y1 - g.y0 + 1;
+      const inG = function(x, y){ return g.ids[L[y*w+x]] ? 1 : 0; };
+      if(gw > 0.95*gh && gl.length === 1){
+        // две слипшиеся цифры — режем по самому «тонкому» месту в середине
+        let bx = -1, bc = 1e9;
+        for(let x=g.x0 + Math.round(0.3*gw); x<=g.x0 + Math.round(0.7*gw); x++){ let c = 0; for(let y=g.y0;y<=g.y1;y++) c += inG(x, y); if(c < bc){ bc = c; bx = x; } }
+        const sub = function(a, b){ let y0 = 1e9, y1 = -1; for(let y=g.y0;y<=g.y1;y++) for(let x=a;x<=b;x++) if(inG(x, y)){ if(y<y0)y0=y; if(y>y1)y1=y; } return y1 >= 0 ? { x0:a, x1:b, y0:y0, y1:y1 } : null; };
+        const A = sub(g.x0, bx - 1), B = sub(bx + 1, g.x1);
+        if(A && B){ glyphs.push({ r:A, get:inG }); glyphs.push({ r:B, get:inG }); return; }
+      }
+      glyphs.push({ r:g, get:inG });
+    });
+    if(glyphs.length > 2) return { v:null, hPx:0, text:!!rowMode && glyphs.length >= 3 };
+    const probs = [];
+    let hsum = 0;
+    for(let q=0;q<glyphs.length;q++){
+      const r = glyphs[q].r;
+      const F = glyphFeatures(glyphs[q].get, r.x0, r.x1, r.y0, r.y1, hbS);
+      const cl = mlpClassify(F);
+      if(!cl) return { v:null, hPx:0 };
+      probs.push(cl.probs); hsum += r.y1 - r.y0 + 1;
+    }
+    const lim = maxV || 31;
+    let v = null, pmin = 0;
+    if(rowMode){
+      // строка сотрудника: выбираем число целиком — вероятность цифр × насколько такое число вообще встречается в графиках
+      const junk = Math.max.apply(null, probs.map(function(p){ return p[10]; }));
+      if(junk > 0.85) return { v:null, hPx:0, text:true, probs:probs };
+      let best = null, tot = 0;
+      for(let val=1; val<=lim; val++){
+        const ds = String(val); if(ds.length !== glyphs.length) continue;
+        let lp = Math.log(valuePrior(val));
+        for(let q=0;q<ds.length;q++) lp += Math.log(Math.max(1e-4, probs[q][+ds[q]] + 0.02*probs[q][10]));
+        const e = Math.exp(lp); tot += e;
+        if(!best || lp > best.lp) best = { v:val, lp:lp, e:e };
+      }
+      if(best){ const post = best.e/Math.max(1e-12, tot); if(post >= 0.5){ v = best.v; pmin = post; } }
+      if(v == null) return { v:null, hPx:0, probs:probs };
+    } else {
       let str = '';
-      groups.forEach(function(g, gi){
-        const gw = g[1]-g[0]+1, m = new Uint8Array(gw*hn);
-        for(let r=0;r<hn;r++) for(let i=0;i<gw;i++) m[r*gw+i] = m0[r*zw + g[0] + i];
-        const cl = classifyGlyph(m, gw, hn, gi === 0);
-        if(cl) str += cl.d;
-      });
-      const v = parseInt(str, 10);
-      res[d] = (v >= 2 && v <= 24) ? v : '?';
-    });
-    return { days:res, band:band, xs0:xs0, xs1:xs1 };
+      for(let q=0;q<probs.length;q++){
+        let c = 0; for(let j=1;j<11;j++) if(probs[q][j] > probs[q][c]) c = j;
+        if(c === 10){ str = ''; break; }
+        str += c; pmin = q === 0 ? probs[q][c] : Math.min(pmin, probs[q][c]);
+      }
+      v = str ? parseInt(str, 10) : null;
+      if(v == null || !(v >= 1 && v <= lim) || pmin < 0.3) return { v:null, hPx:0, probs:probs };
+    }
+    let gy0 = 1e9, gy1 = -1; glyphs.forEach(function(g){ if(g.r.y0 < gy0) gy0 = g.r.y0; if(g.r.y1 > gy1) gy1 = g.r.y1; });
+    const cy = ((gy0 + gy1)/2/(n - 1))*(1 + 2*ext) - ext;   // центр цифр в долях высоты полосы
+    return { v:v, p:pmin, d:1 - pmin, hPx:hsum/glyphs.length*((1 + 2*ext)*hb/(n-1)), nComp:comps.length, probs:probs, cy:cy };
+  }
+  // Насколько часто такое значение встречается в графиках смен: «1» — смена, 8/10/11/12 — обычные часы
+  function valuePrior(v){
+    if(v === 1) return 1;
+    if(v === 8 || v === 10 || v === 11 || v === 12) return 0.6;
+    if(v === 6 || v === 7 || v === 9 || v === 13 || v === 14 || v === 15 || v === 16) return 0.3;
+    return 0.1;
+  }
+  function findHeaderOwn(P){
+    const segW = Math.max(16, Math.round(P.W/48));
+    const lines = trackLines(P, 0, P.W, 0, segW, 0.22);
+    const dbg = { lines:lines.length }; if(window.__WC_TEST__) findHeaderOwn.dbg = dbg;
+    if(lines.length < 3) return null;
+    const xc = P.W/2;
+    const ord = lines.slice().sort(function(a, b){ return lineY(a, xc) - lineY(b, xc); });
+    const bands = [];
+    for(let i=0;i+1<ord.length;i++){
+      const A = ord[i], B = ord[i+1];
+      if(Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) < P.W*0.15) continue;
+      // линии могли «потеряться» на краю (перспектива, объединённые клетки) — берём с запасом, прямые продолжаем
+      const x0 = 0, x1 = P.W - 1;
+      const g = lineY(B, (x0+x1)/2) - lineY(A, (x0+x1)/2);
+      if(g < 10 || g > P.H/5) continue;
+      const band = { top:(function(L){ return function(x){ return lineY(L, x); }; })(A), bot:(function(L){ return function(x){ return lineY(L, x); }; })(B) };
+      const seps = bandSeparators(P, band, x0, x1);
+      const ch = regularChain(seps, Math.max(8, 0.5*g));
+      if(!ch || ch.length - 1 < 10) continue;
+      bands.push({ i:i, band:band, chain:ch, g:g, A:A, B:B });
+    }
+    dbg.raw = bands;
+    dbg.bands = bands.map(function(b){ return [b.i, Math.round(b.g), b.chain.length, Math.round(b.chain[0]), Math.round(b.chain[b.chain.length-1])]; });
+    if(!bands.length) return null;
+    // шаг столбцов дней — тот, что повторяется в большинстве полос (случайные цепочки из цифр отсекаем)
+    bands.forEach(function(b){ const ds = []; for(let j=1;j<b.chain.length;j++) ds.push(b.chain[j] - b.chain[j-1]); b.step = median(ds); });
+    let dom = null, domW = -1;
+    bands.forEach(function(b){ let wsum = 0; bands.forEach(function(o){ if(Math.abs(o.step - b.step) <= 0.08*b.step) wsum += o.chain.length; }); if(wsum > domW){ domW = wsum; dom = b.step; } });
+    for(let i=bands.length-1;i>=0;i--) if(Math.abs(bands[i].step - dom) > 0.12*dom) bands.splice(i, 1);
+    const maxLen = Math.max.apply(null, bands.map(function(b){ return b.chain.length; }));
+    const good = bands.filter(function(b){ return b.chain.length >= 0.75*maxLen; });
+    const gm = median(good.map(function(b){ return b.g; }));
+    // шапка — строка чисел над верхними полосами сетки (или в них); окна с шагом в четверть строки.
+    // Столбцы берём из самой длинной цепочки, окна ведём от самой верхней полосы с сеткой.
+    let best = null;
+    const tried = [];
+    const refs = [good[0]].concat(bands[0] !== good[0] ? [bands[0]] : []);
+    const longest = bands.reduce(function(m, b){ return b.chain.length > m.chain.length ? b : m; }, bands[0]);
+    const offMin = -3.25 - Math.max(0, Math.round((good[0].band.top(P.W/2) - bands[0].band.top(P.W/2))/gm));
+    for(let bi=0; bi<refs.length && !(best && best.m >= 0.6*best.n); bi++){
+      const bd = refs[bi], ch = longest.chain.length > 1.3*bd.chain.length ? longest.chain : bd.chain, xm = (ch[0] + ch[ch.length-1])/2;
+      for(let off=(bi === 0 ? offMin : -3.25); off<=5.01; off+=0.25){
+        const t0 = bd.band.top(xm) + off*gm;
+        if(tried.some(function(t){ return Math.abs(t - t0) < 0.2*gm; })) continue;
+        tried.push(t0);
+        const B0 = bd.band, o = off*gm;
+        const win = { top:function(x){ return B0.top(x) + o; }, bot:function(x){ return B0.top(x) + o + gm; } };
+        if(win.top(xm) < 0 || win.bot(xm) > P.H) continue;
+        const cells = [];
+        let filled = 0;
+        for(let j=0;j+1<ch.length;j++){
+          const d = ch[j+1] - ch[j];
+          const c = readCellNumber(P, win, ch[j] + 0.1*d, ch[j+1] - 0.1*d);
+          cells.push(c); if(c && c.v != null) filled++;
+        }
+        if(filled < 0.4*cells.length) continue;
+        let bk = null, bm = 0;
+        for(let k=2-cells.length; k<=31; k++){
+          let m = 0;
+          for(let j=0;j<cells.length;j++){ const dd = j + k; if(dd >= 1 && dd <= 31 && cells[j] && cells[j].v === dd) m++; }
+          if(m > bm){ bm = m; bk = k; }
+        }
+        (dbg.cells = dbg.cells || []).push([bd.i, +off.toFixed(2), bm, bk, cells.map(function(c){ return c ? c.v : '-'; }).join(',')]);
+        if(bk === null) continue;
+        const q = bm + 0.1*filled;
+        if(!best || q > best.q) best = { q:q, m:bm, k:bk, bd:{ band:win, chain:ch, g:gm, i:bd.i }, cells:cells, filled:filled, n:cells.length };
+      }
+    }
+    if(!best || best.m < Math.max(4, 0.3*best.filled)) return null;
+    // уточняем окно шапки по высоте: центрируем по самим цифрам и перечитываем клетки
+    try{
+      const ch0 = best.bd.chain, W0 = best.bd.band, g0 = best.bd.g;
+      const cys = [];
+      for(let j=0;j+1<ch0.length && cys.length < 12;j++){
+        const c = best.cells[j]; if(!c || c.v !== j + best.k || c.cy == null) continue;
+        cys.push(c.cy);
+      }
+      if(cys.length >= 3){
+        const dy = median(cys) - 0.5;          // смещение центра цифр от центра окна (в долях окна)
+        if(Math.abs(dy) > 0.06){
+          const o2 = dy*g0;
+          const win2 = { top:function(x){ return W0.top(x) + o2; }, bot:function(x){ return W0.bot(x) + o2; } };
+          const cells2 = [];
+          for(let j=0;j+1<ch0.length;j++){ const d = ch0[j+1] - ch0[j]; cells2.push(readCellNumber(P, win2, ch0[j] + 0.1*d, ch0[j+1] - 0.1*d)); }
+          let m2 = 0; for(let j=0;j<cells2.length;j++){ const dd = j + best.k; if(cells2[j] && cells2[j].v === dd) m2++; }
+          if(m2 >= best.m){ best.cells = cells2; best.m = m2; best.bd = { band:win2, chain:ch0, g:g0, i:best.bd.i }; }
+        }
+      }
+    }catch(e){}
+    const bd = best.bd, ch = bd.chain, k = best.k;
+    const ds = [], xs = [], ys = [], hs = [];
+    let maxDay = 0;
+    for(let j=0;j+1<ch.length;j++){
+      const d = j + k; if(d < 1 || d > 31) continue;
+      const x = (ch[j] + ch[j+1])/2;
+      ds.push(d); xs.push(x); ys.push((bd.band.top(x) + bd.band.bot(x))/2);
+      const c = best.cells[j];
+      if(c && c.v === d){ hs.push(c.hPx); if(d > maxDay) maxDay = d; }
+    }
+    if(ds.length < 4) return null;
+    // положение столбцов — по клеткам, где число прочитано верно (случайная лишняя линия в цепочке не сдвинет дни)
+    const md = [], mx = [];
+    for(let j=0;j+1<ch.length;j++){ const d = j + k, c = best.cells[j]; if(c && c.v === d){ md.push(d); mx.push((ch[j] + ch[j+1])/2); } }
+    const useM = md.length >= 6 && (Math.max.apply(null, md) - Math.min.apply(null, md)) >= 10;
+    const fd = useM ? md : ds, fx = useM ? mx : xs;
+    const px = polyfit(fd, fx, fd.length >= 8 ? 2 : 1) || polyfit(fd, fx, 1);
+    const py = polyfit(xs, ys, 1);
+    if(!px || !py) return null;
+    // сколько дней в месяце: читаем клетки 28…31 по найденной сетке
+    let nDays = 0;
+    try{
+      const Hx = { px:px }, lastRead = {};
+      for(let d=27; d<=32; d++){
+        const xa = polyval(px, d - 0.42), xb = polyval(px, d + 0.42);
+        if(xb >= P.W - 2 || xa <= 1){ lastRead[d] = undefined; continue; }
+        const c = readCellNumber(P, bd.band, xa, xb, 32, true);
+        lastRead[d] = !c ? 'empty' : (c.text ? 'text' : c.v);
+      }
+      for(let d=31; d>=28; d--){
+        if(lastRead[d] === d){
+          // уверены, только если и предыдущее число прочитано, а после — пусто/надпись/край
+          const nx = lastRead[d+1];
+          if(lastRead[d-1] === d-1 && (d === 31 || nx === 'empty' || nx === 'text' || nx === undefined)) nDays = d;
+          break;
+        }
+      }
+    }catch(e){ nDays = 0; }
+    return { px:px, py:py, days:ds, maxDay:Math.max(maxDay, nDays), nDays:nDays, h:hs.length ? median(hs) : 0.5*bd.g, own:true, matched:best.m, cellsN:best.cells.length,
+             band:bd.band, g:bd.g, k:k, chain:ch };
   }
 
   // ---------- поиск сотрудника по ФИО ----------
-  function normRu(s){ return String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^а-яa-z]/g,''); }
+  // латинские буквы, похожие на русские (OCR их путает), переводим в кириллицу
+  const HOMO = { a:'а', e:'е', o:'о', p:'р', c:'с', x:'х', y:'у', k:'к', m:'м', t:'т', h:'н', b:'в', u:'и', n:'п', r:'г', '0':'о', '3':'з', '6':'б' };
+  function normRu(s){ return String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[a-z036]/g, function(ch){ return HOMO[ch] || ''; }).replace(/[^а-я]/g,''); }
   function lev(a, b){
     const m = a.length, n = b.length; if(!m) return n; if(!n) return m;
     let prev = new Array(n+1), cur = new Array(n+1);
@@ -2375,7 +3191,7 @@
     if(!parts.length) return null;
     const sur = parts[0], first = parts[1] || '';
     const ws = words.map(function(w){ return Object.assign({ n:normRu(w.text) }, w); }).filter(function(w){ return w.n.length >= 2 && /[а-я]/.test(w.n); });
-    let best = null;
+    let best = null, second = null;
     ws.forEach(function(w){
       let s1 = sim(w.n, sur);
       if(sur.length >= 5 && w.n.length >= 5 && w.n.slice(0,5) === sur.slice(0,5)) s1 = Math.max(s1, 0.8);
@@ -2388,14 +3204,566 @@
         if(s > s2){ s2 = s; firstWord = o.text; }
       });
       const score = s1 + s2;
-      if(!best || score > best.score) best = { score:score, s1:s1, s2:s2, x:w.xc, y:w.yc, label:(w.text + (firstWord ? ' ' + firstWord : '')) };
+      const cand = { score:score, s1:s1, s2:s2, x:w.xc, y:w.yc, h:w.h, label:(w.text + (firstWord ? ' ' + firstWord : '')) };
+      if(!best || score > best.score){ if(best && Math.abs(best.y - cand.y) > 0.5*cand.h) second = best; best = cand; }
+      else if(Math.abs(best.y - cand.y) > 0.5*best.h && (!second || score > second.score)) second = cand;
     });
     if(!best || best.s1 < 0.6 || (first && best.s2 < 0.55)) return null;
+    // только инициал совпал — мало (однофамильцы с тем же инициалом встречаются): не угадываем
+    if(first && best.s2 < 0.75) return null;
+    // вторая строка с почти такой же оценкой — неоднозначно, пусть человек выберет сам
+    if(second && second.score > best.score - 0.15 && Math.abs(second.y - best.y) > 0.5*best.h) return null;
     return best;
   }
 
+  // ================= собственное распознавание слов («поиск слова по образцу») =================
+  // Не зависит от того, как движок OCR прочитал кириллицу: нужное слово (фамилию, имя, месяц, день недели)
+  // рисуем сами несколькими шрифтами и сравниваем его «силуэт» со словами на фото.
+  const SPOT_FONTS = [
+    '"Times New Roman", "Liberation Serif", Times, serif',
+    'Arial, "Liberation Sans", Helvetica, sans-serif',
+    'Calibri, Carlito, "Helvetica Neue", sans-serif',
+    'Verdana, "DejaVu Sans", sans-serif'
+  ];
+  const SPOT_H = 16, SPOT_W = 48;
+  const spotTplCache = {};
+
+  // Выпрямленная полоса с квадратными «пикселями»: n строк между долями f0..f1 высоты полосы
+  function sampleStrip(P, band, xa, xb, f0, f1, n){
+    const G = P.G, W = P.W, Hh = P.H;
+    const xm = (xa + xb)/2, h0 = Math.max(1, band.bot(xm) - band.top(xm));
+    const step = Math.max(0.35, h0*(f1 - f0)/Math.max(1, n - 1));
+    const w = Math.max(1, Math.min(6000, Math.floor((xb - xa)/step)));
+    const S = new Float32Array(n*w);
+    for(let i=0;i<w;i++){
+      const x = xa + i*step, t = band.top(x), h = band.bot(x) - t;
+      let xi = Math.floor(x), fx = x - xi;
+      if(xi < 0){ xi = 0; fx = 0; } if(xi > W-2){ xi = W-2; fx = 1; }
+      for(let r=0;r<n;r++){
+        const y = t + (f0 + (f1 - f0)*(n > 1 ? r/(n-1) : 0))*h;
+        let y0 = Math.floor(y), fy = y - y0;
+        if(y0 < 0){ y0 = 0; fy = 0; } if(y0 > Hh-2){ y0 = Hh-2; fy = 1; }
+        const k = y0*W + xi;
+        S[r*w+i] = (G[k]*(1-fx) + G[k+1]*fx)*(1-fy) + (G[k+W]*(1-fx) + G[k+W+1]*fx)*fy;
+      }
+    }
+    return { S:S, w:w, n:n, step:step, xa:xa };
+  }
+
+  // Бинаризация полосы: фон — свой для каждого столбца (цветная заливка, тени), «чернила» — заметно темнее фона.
+  // Длинные горизонтальные и вертикальные отрезки (линии сетки) убираем.
+  function slidingMin(arr, r){
+    const n = arr.length, out = new Float32Array(n);
+    for(let i=0;i<n;i++){ let m = 1e9; const a = Math.max(0, i-r), b = Math.min(n-1, i+r); for(let k=a;k<=b;k++) if(arr[k] < m) m = arr[k]; out[i] = m; }
+    return out;
+  }
+  function inkMask(Z, keepVertical, lr0, lr1, ratio, lc0, lc1){
+    const S0 = Z.S, w = Z.w, n = Z.n, kr = ratio || 0.45;
+    lr0 = lr0 == null ? 0 : Math.max(0, lr0|0); lr1 = lr1 == null ? n - 1 : Math.min(n - 1, lr1|0);
+    // лёгкое сглаживание 3×3 — против шума и зерна
+    const S = new Float32Array(n*w);
+    for(let r=0;r<n;r++) for(let i=0;i<w;i++){
+      let s = 0, c = 0;
+      for(let dr=-1;dr<=1;dr++){ const rr = r+dr; if(rr < 0 || rr >= n) continue;
+        for(let di=-1;di<=1;di++){ const ii = i+di; if(ii < 0 || ii >= w) continue; s += S0[rr*w+ii]; c++; } }
+      S[r*w+i] = s/c;
+    }
+    const bg = new Float32Array(w), cmin = new Float32Array(w), col = new Float32Array(n);
+    for(let i=0;i<w;i++){ let mn = 255; for(let r=0;r<n;r++){ const v = S[r*w+i]; col[r] = v; if(r >= lr0 && r <= lr1 && v < mn) mn = v; } bg[i] = percentile(col, 80); cmin[i] = mn; }
+    // уровень «чернил» — самый тёмный штрих поблизости (а не во всём кадре: тёмный стол рядом не мешает);
+    // для клетки — только по её середине (линии сетки у краёв темнее цифр и сбили бы порог)
+    let lo;
+    if(lc0 != null){
+      let m = 255; for(let i=Math.max(0, lc0|0); i<=Math.min(w-1, lc1|0); i++) if(cmin[i] < m) m = cmin[i];
+      lo = new Float32Array(w).fill(m);
+    } else lo = slidingMin(cmin, n);
+    const M = new Uint8Array(n*w), soft = new Float32Array(n*w);
+    for(let i=0;i<w;i++){
+      const c = bg[i] - lo[i]; if(c < 30) continue;
+      const thr = bg[i] - Math.max(16, kr*c);
+      for(let r=0;r<n;r++){
+        const v = S[r*w+i];
+        if(v < thr) M[r*w+i] = 1;
+        const t = (bg[i] - v)/c; soft[r*w+i] = t <= 0.1 ? 0 : (t >= 0.8 ? 1 : (t - 0.1)/0.7);
+      }
+    }
+    M.soft = soft;
+    // горизонтальные линии: сплошной отрезок длиннее 1.6 высоты полосы
+    const maxH = Math.round(1.6*n);
+    for(let r=0;r<n;r++){
+      for(let i=0;i<w;){
+        if(M[r*w+i]){ let j = i; while(j+1 < w && M[r*w+j+1]) j++; if(j - i + 1 > maxH) for(let q=i;q<=j;q++) M[r*w+q] = 0; i = j+1; }
+        else i++;
+      }
+    }
+    // вертикальные линии: столбец почти целиком тёмный
+    if(!keepVertical) for(let i=0;i<w;i++){
+      let c = 0; for(let r=0;r<n;r++) c += M[r*w+i];
+      if(c >= 0.8*n) for(let r=0;r<n;r++) M[r*w+i] = 0;
+    }
+    return M;
+  }
+
+  // Связные области (8-связность): метки и рамки
+  function components(M, w, n, minArea){
+    const L = new Int32Array(w*n), comps = [], stack = [];
+    let id = 0;
+    for(let s=0;s<w*n;s++){
+      if(!M[s] || L[s]) continue;
+      id++; let x0 = w, x1 = -1, y0 = n, y1 = -1, area = 0;
+      stack.length = 0; stack.push(s); L[s] = id;
+      while(stack.length){
+        const k = stack.pop(), x = k % w, y = (k - x)/w;
+        area++; if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y;
+        for(let dy=-1; dy<=1; dy++){ const yy = y+dy; if(yy < 0 || yy >= n) continue;
+          for(let dx=-1; dx<=1; dx++){ const xx = x+dx; if(xx < 0 || xx >= w) continue;
+            const q = yy*w + xx; if(M[q] && !L[q]){ L[q] = id; stack.push(q); } } }
+      }
+      comps.push({ id:id, x0:x0, x1:x1, y0:y0, y1:y1, area:area });
+    }
+    return { L:L, comps:comps.filter(function(c){ return c.area >= minArea; }) };
+  }
+
+  // Образ слова: маска → 16×48, лёгкое размытие, нормировка (для корреляции)
+  function blurVec(v, W, H){
+    const k = [0.054, 0.244, 0.403, 0.244, 0.054], t = new Float32Array(v.length);
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let s = 0, c = 0; for(let d=-2;d<=2;d++){ const xx = x+d; if(xx < 0 || xx >= W) continue; s += v[y*W+xx]*k[d+2]; c += k[d+2]; } t[y*W+x] = s/c; }
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let s = 0, c = 0; for(let d=-2;d<=2;d++){ const yy = y+d; if(yy < 0 || yy >= H) continue; s += t[yy*W+x]*k[d+2]; c += k[d+2]; } v[y*W+x] = s/c; }
+  }
+  function maskVec(get, x0, x1, y0, y1, TH, TW){
+    const w = x1 - x0 + 1, h = y1 - y0 + 1; if(w < 2 || h < 3) return null;
+    TH = TH || SPOT_H; TW = TW || SPOT_W;
+    const v = new Float32Array(TH*TW);
+    for(let ty=0; ty<TH; ty++){
+      const sy0 = y0 + ty*h/TH, sy1 = y0 + (ty+1)*h/TH;
+      for(let tx=0; tx<TW; tx++){
+        const sx0 = x0 + tx*w/TW, sx1 = x0 + (tx+1)*w/TW;
+        let s = 0, c = 0;
+        for(let y=Math.floor(sy0); y<sy1; y++){
+          const wy = Math.min(y+1, sy1) - Math.max(y, sy0); if(wy <= 0) continue;
+          for(let x=Math.floor(sx0); x<sx1; x++){
+            const wx = Math.min(x+1, sx1) - Math.max(x, sx0); if(wx <= 0) continue;
+            s += get(x, y)*wx*wy; c += wx*wy;
+          }
+        }
+        v[ty*TW+tx] = c ? s/c : 0;
+      }
+    }
+    blurVec(v, TW, TH);
+    let m = 0; for(let i=0;i<v.length;i++) m += v[i]; m /= v.length;
+    let q = 0; for(let i=0;i<v.length;i++){ v[i] -= m; q += v[i]*v[i]; }
+    q = Math.sqrt(q) || 1; for(let i=0;i<v.length;i++) v[i] /= q;
+    return { v:v, asp:w/h };
+  }
+  function vecDist1(A, B){
+    let c = 0; const a = A.v, b = B.v; for(let i=0;i<a.length;i++) c += a[i]*b[i];
+    return (1 - c) + 0.45*Math.abs(Math.log(A.asp/B.asp));
+  }
+  function vecDist(A, B){
+    const d1 = vecDist1(A, B);
+    if(SPOT_MODE === 0 || !A.line || !B.line) return d1;
+    const d2 = vecDist1(A.line, B.line);
+    return SPOT_MODE === 1 ? d2 : (SPOT_MODE === 2 ? 0.5*(d1 + d2) : Math.min(d1, d2));
+  }
+  let SPOT_MODE = 3;
+  const IMP_CFG = { inset:0.04, snap:true, zoneLines:true, glyphRow:true, localInk:false, maxChan:true, surFloor:0, lowResRatio:0.45 };
+  function aspFits(asp, T){ return T && asp >= 0.65*T.asp && asp <= 1.5*T.asp; }
+
+  // Эталон слова: рисуем шрифтом на холсте
+  const capCache = {};
+  function capHeightOf(font, bold, fsz){
+    const key = (bold ? 'b' : '') + font + '|' + fsz.toFixed(1);
+    if(capCache[key]) return capCache[key];
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently:true });
+    const W = Math.ceil(fsz*2), Hc = Math.ceil(fsz*2);
+    c.width = W; c.height = Hc;
+    ctx.font = (bold ? 'bold ' : '') + fsz.toFixed(1) + 'px ' + font; ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('Н', fsz*0.25, fsz*1.35);
+    const d = ctx.getImageData(0, 0, W, Hc).data;
+    let y0 = Hc; for(let y=0;y<Hc;y++){ for(let x=0;x<W;x++) if(d[(y*W+x)*4+3] > 127){ y0 = y; break; } if(y0 < Hc) break; }
+    const h = Math.max(1, fsz*1.35 - y0);
+    capCache[key] = h;
+    return h;
+  }
+  function spotTemplate(text, font, bold, lowCap, up){
+    // lowCap — высота заглавной буквы на исходном (мелком) фото в пикселях: тогда рисуем эталон так же мелко
+    // и увеличиваем, как увеличивалось фото, — эталон «теряет» те же детали, что и снимок
+    const low = lowCap && lowCap < 15 && up > 1.15;
+    const lc = low ? Math.round(lowCap*2)/2 : 0, uq = low ? Math.round(up*4)/4 : 0;
+    const key = (bold ? 'b|' : '') + font + '|' + text + (low ? '|' + lc + '|' + uq : '');
+    if(key in spotTplCache) return spotTplCache[key];
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently:true });
+    const fsz = low ? Math.max(4, lc/0.7) : 64;
+    const f = (bold ? 'bold ' : '') + fsz.toFixed(1) + 'px ' + font;
+    ctx.font = f;
+    let tw = Math.ceil(ctx.measureText(text).width + fsz*0.5), th = Math.ceil(fsz*1.9);
+    c.width = tw; c.height = th;
+    ctx.font = f; ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, fsz*0.25, fsz*1.35);
+    let src = c;
+    if(low){
+      const c2 = document.createElement('canvas'); c2.width = Math.round(tw*uq); c2.height = Math.round(th*uq);
+      const x2 = c2.getContext('2d', { willReadFrequently:true }); x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
+      x2.drawImage(c, 0, 0, c2.width, c2.height);
+      src = c2; tw = c2.width; th = c2.height;
+    }
+    const d = src.getContext('2d', { willReadFrequently:true }).getImageData(0, 0, tw, th).data;
+    let x0 = tw, x1 = -1, y0 = th, y1 = -1;
+    const thrA = low ? 70 : 127;
+    for(let y=0;y<th;y++) for(let x=0;x<tw;x++) if(d[(y*tw+x)*4+3] > thrA){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    const softA = function(a){ const t = a/255; return t <= 0.1 ? 0 : (t >= 0.8 ? 1 : (t - 0.1)/0.7); };
+    const getT = function(x, y){ return (y < 0 || y >= th) ? 0 : softA(d[(y*tw+x)*4+3]); };
+    const r = x1 < 0 ? null : maskVec(getT, Math.max(0, x0-1), Math.min(tw-1, x1+1), Math.max(0, y0-1), Math.min(th-1, y1+1));
+    if(r){
+      // высота заглавной этого шрифта (по букве «Н») и базовая линия — для «вида по линии письма»
+      const capPx = capHeightOf(font, bold, fsz)*(low ? uq : 1), basePx = fsz*1.35*(low ? uq : 1);
+      const lt = Math.round(basePx - capPx + 1), lb = Math.round(basePx + 0.3*capPx);
+      const lv = maskVec(getT, Math.max(0, x0-1), Math.min(tw-1, x1+1), lt, lb);
+      if(lv){ lv.asp = (Math.min(tw-1, x1+1) - Math.max(0, x0-1) + 1)/(1.3*capPx); r.line = lv; }
+    }
+    spotTplCache[key] = r;
+    return r;
+  }
+
+
+  // Фрагменты строки: связные области, слитые по горизонтальному перекрытию (й, ё, ы — одним куском)
+  function stripFragments(Z){
+    const M = inkMask(Z), w = Z.w, n = Z.n;
+    // остатки горизонтальных линий сетки (прерывистые): строка, тёмная на большей части ширины;
+    // у верхнего и нижнего края полосы хватает и трети ширины — там только линии, а не буквы
+    const cov = new Float32Array(n);
+    for(let r=0;r<n;r++){ let c = 0; for(let i=0;i<w;i++) c += M[r*w+i]; cov[r] = c/w; }
+    let cutTop = -1, cutBot = n;
+    // линия — тонкая: заметно темнее соседних строк (строка букв так не выглядит)
+    const thinLine = function(r, inward){ const q = r + inward*3; return cov[r] >= 0.35 && (q < 0 || q >= n || cov[q] < 0.5*cov[r]); };
+    for(let r=0;r<Math.round(0.18*n);r++) if(thinLine(r, 1)) cutTop = r;
+    for(let r=n-1;r>=Math.round(0.82*n);r--) if(thinLine(r, -1)) cutBot = r;
+    for(let r=0;r<n;r++) if(r <= cutTop || r >= cutBot || cov[r] >= 0.55) for(let i=0;i<w;i++) M[r*w+i] = 0;
+    const cc = components(M, w, n, Math.max(3, Math.round(0.004*n*n)));
+    let comps = cc.comps.filter(function(c){ const hh = c.y1-c.y0+1, ww = c.x1-c.x0+1; return !(hh >= 0.92*n && ww <= 0.2*n) && !(ww > 2.5*n && hh < 0.2*n); });
+    const hs = comps.map(function(c){ return c.y1 - c.y0 + 1; }).filter(function(v){ return v >= 0.25*n; });
+    const capH = hs.length ? percentile(hs, 70) : 0.4*n;
+    // крошки у края полосы (обрывки линий) и совсем мелкий мусор — не буквы
+    comps = comps.filter(function(c){
+      const hh = c.y1 - c.y0 + 1;
+      if((c.y0 <= 1 || c.y1 >= n - 2) && hh < 0.3*n) return false;   // обрывок линии у края
+      return c.area >= Math.max(3, 0.01*capH*capH);
+    });
+    // строка текста — там, где больше всего «чернил»; далёкие от неё кусочки отбрасываем
+    const rowInk = new Float32Array(n);
+    comps.forEach(function(c){ if(c.y1 - c.y0 + 1 >= 0.25*n) for(let y=c.y0;y<=c.y1;y++) rowInk[y] += c.area; });
+    let yc = 0, ys = 0; for(let y=0;y<n;y++){ yc += y*rowInk[y]; ys += rowInk[y]; }
+    const yMid = ys ? yc/ys : n/2;
+    comps = comps.filter(function(c){ return c.y1 >= yMid - 1.1*capH && c.y0 <= yMid + 1.1*capH; });
+    comps.sort(function(a, b){ return a.x0 - b.x0; });
+    const fr = [];
+    comps.forEach(function(c){
+      const f = fr[fr.length-1];
+      const vgap = f ? Math.max(0, Math.max(f.y0, c.y0) - Math.min(f.y1, c.y1)) : 0;
+      if(f && c.x0 <= f.x1 - 0.3*(c.x1 - c.x0 + 1) && vgap <= 0.45*capH){
+        if(c.x1 > f.x1) f.x1 = c.x1; if(c.y0 < f.y0) f.y0 = c.y0; if(c.y1 > f.y1) f.y1 = c.y1; f.ids[c.id] = 1;
+      } else { const o = { x0:c.x0, x1:c.x1, y0:c.y0, y1:c.y1, ids:{} }; o.ids[c.id] = 1; fr.push(o); }
+    });
+    // линия письма строки: базовая линия (низ большинства букв) и высота заглавных
+    let base = n*0.75, ch = capH;
+    const lett = comps.filter(function(c){ return c.y1 - c.y0 + 1 >= 0.4*capH; });
+    if(lett.length >= 2){
+      base = median(lett.map(function(c){ return c.y1; }));
+      const hts = lett.filter(function(c){ return Math.abs(c.y1 - base) <= 0.15*capH; }).map(function(c){ return base - c.y0 + 1; });
+      if(hts.length) ch = Math.max(0.5*capH, percentile(hts, 90));
+    }
+    return { fr:fr, L:cc.L, w:w, n:n, capH:capH, M:M, soft:M.soft, base:base, ch:ch };
+  }
+  // Участки из нескольких соседних фрагментов (слово могло распасться на буквы или слиться с соседним)
+  function gapSplit(gaps, capH){
+    // порог «промежуток между буквами / между словами» — делим промежутки строки на две группы (метод Оцу)
+    const g = gaps.filter(function(v){ return v < 1.5*capH; }).sort(function(a, b){ return a - b; });
+    let thr = 0.3*capH;
+    if(g.length >= 3){
+      let best = -1;
+      for(let i=1;i<g.length;i++){
+        const a = g.slice(0, i), b = g.slice(i);
+        const ma = a.reduce(function(s, v){ return s + v; }, 0)/a.length, mb = b.reduce(function(s, v){ return s + v; }, 0)/b.length;
+        const between = a.length*b.length*(ma - mb)*(ma - mb);
+        if(between > best){ best = between; thr = (g[i-1] + g[i])/2; }
+      }
+    }
+    return Math.max(0.16*capH, Math.min(0.45*capH, thr));
+  }
+  function fragSpans(F){
+    const fr = F.fr, N = fr.length, capH = F.capH, gaps = [], spans = [];
+    for(let i=0;i<N-1;i++) gaps.push(fr[i+1].x0 - fr[i].x1);
+    const wg = gapSplit(gaps, capH);
+    for(let a=0;a<N;a++){
+      let y0 = fr[a].y0, y1 = fr[a].y1;
+      const inner = [];
+      for(let b=a; b<Math.min(N, a+14); b++){
+        if(b > a){ if(gaps[b-1] > 0.9*capH) break; inner.push(gaps[b-1]); y0 = Math.min(y0, fr[b].y0); y1 = Math.max(y1, fr[b].y1); }
+        if(y1 - y0 + 1 < 0.45*capH) continue;
+        // граница слова: промежуток снаружи заметно больше, чем между буквами внутри
+        const gm = inner.length ? median(inner) : null;
+        const thr = Math.min(0.4*capH, gm != null ? Math.max(1.3*gm + 1, 0.1*capH) : Math.max(wg, 0.18*capH));
+        const gb = a > 0 ? gaps[a-1] : 1e9, ga = b < N-1 ? gaps[b] : 1e9;
+        spans.push({ a:a, b:b, pen:(gb < thr ? 0.25 : 0) + (ga < thr ? 0.25 : 0), asp:(fr[b].x1 - fr[a].x0 + 1)/(y1 - y0 + 1), vec:undefined });
+      }
+    }
+    return spans;
+  }
+  function spanVec(F, sp){
+    if(sp.vec !== undefined) return sp.vec;
+    const fr = F.fr, ids = {}; let x1 = fr[sp.a].x1, y0 = 1e9, y1 = -1;
+    for(let k=sp.a;k<=sp.b;k++){ const f = fr[k]; if(f.x1 > x1) x1 = f.x1; if(f.y0 < y0) y0 = f.y0; if(f.y1 > y1) y1 = f.y1; for(const id in f.ids) ids[id] = 1; }
+    const L = F.L, w = F.w, n = F.n, soft = F.soft;
+    // мягкая маска: яркость «чернил» у пикселей слова и их соседей (сохраняет форму мелкого текста)
+    const x0 = Math.max(0, fr[sp.a].x0 - 1), xe = Math.min(w - 1, x1 + 1), ya = Math.max(0, y0 - 1), ye = Math.min(n - 1, y1 + 1);
+    const get = function(x, y){
+      if(y < 0 || y >= n) return 0;
+      const k = y*w + x;
+      if(ids[L[k]] || (x > 0 && ids[L[k-1]]) || (x < w-1 && ids[L[k+1]]) || (y > 0 && ids[L[k-w]]) || (y < n-1 && ids[L[k+w]])) return soft ? soft[k] : 1;
+      return 0;
+    };
+    sp.vec = maskVec(get, x0, xe, ya, ye);
+    // второй взгляд: по высоте — строго по линии письма строки (не зависит от крошек и обрезанных букв)
+    if(sp.vec && F.base != null){
+      const lt = Math.round(F.base - F.ch + 1), lb = Math.round(F.base + 0.3*F.ch);
+      const lv = maskVec(get, x0, xe, lt, lb);
+      if(lv){ lv.asp = (xe - x0 + 1)/(1.3*F.ch); sp.vec.line = lv; }
+    }
+    return sp.vec;
+  }
+
+  // Строки таблицы (между соседними горизонтальными линиями)
+  function tableRows(H, nd, lines, pitch){
+    const xr = xOfDay(H, 0.5);
+    const yHead = polyval(H.py, xr);
+    const ys = lines.map(function(L){ return { y:lineY(L, xr), c:L }; }).sort(function(a, b){ return a.y - b.y; });
+    const rows = [];
+    for(let i=0;i+1<ys.length;i++){
+      const a = ys[i], b = ys[i+1], g = b.y - a.y;
+      if(g < 0.5*pitch) continue;
+      const k = Math.max(1, Math.round(g/pitch));
+      if(k > 3) continue;
+      for(let q=0;q<k;q++){
+        const ca = a.c, cb = b.c, f0 = q/k, f1 = (q+1)/k;
+        const band = { top:function(x){ const t = lineY(ca, x); return t + (lineY(cb, x) - t)*f0; },
+                       bot:function(x){ const t = lineY(ca, x); return t + (lineY(cb, x) - t)*f1; } };
+        const yc = (band.top(xr) + band.bot(xr))/2;
+        if(yc < yHead + 0.4*H.h) continue;      // шапка — не сотрудник
+        rows.push({ band:band, y:yc });
+      }
+    }
+    return rows;
+  }
+
+  function capWord(s){ s = String(s||'').toLowerCase(); return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+  // Полоса с именем: окно высотой в строку, сдвинутое (в пределах трети строки) так, чтобы текст не обрезался
+  function nameStrip(P, band, xa, xb, n){
+    const n2 = Math.round(n*1.7);
+    const T = sampleStrip(P, band, xa, xb, -0.35, 1.35, n2);
+    const M = inkMask(T), w = T.w;
+    const prof = new Float32Array(n2);
+    for(let r=0;r<n2;r++){ let c = 0; for(let i=0;i<w;i++) c += M[r*w+i]; prof[r] = c/w >= 0.5 ? 0 : c; }   // линии не считаем
+    const rowOf = function(f){ return Math.round((f + 0.35)/1.7*(n2 - 1)); };
+    let bestO = 0, bestS = -1e9;
+    for(let o=-0.3; o<=0.301; o+=0.05){
+      const a = rowOf(o + 0.06), b = rowOf(o + 0.94);
+      let inS = 0, edge = 0;
+      for(let r=a;r<=b;r++) inS += prof[r];
+      // штраф, если текст режется краем окна
+      for(let r=Math.max(0, a-2); r<=a+1; r++) edge += prof[r];
+      for(let r=b-1; r<=Math.min(n2-1, b+2); r++) edge += prof[r];
+      const sc = inS - 3*edge - Math.abs(o)*0.02*inS;
+      if(sc > bestS){ bestS = sc; bestO = o; }
+    }
+    return sampleStrip(P, band, xa, xb, bestO + 0.05, bestO + 0.95, n);
+  }
+
+  // Поиск строки сотрудника по ФИО без OCR: оценка для каждой строки (меньше — лучше)
+  function spotPerson(P, H, nd, lines, pitch, fio){
+    const parts = String(fio||'').trim().split(/\s+/).map(function(t){ return t.replace(/[^А-Яа-яЁё-]/g, ''); }).filter(Boolean);
+    if(!parts.length) return null;
+    const sur = capWord(parts[0]), first = parts[1] ? capWord(parts[1]) : '', pat = parts[2] ? capWord(parts[2]) : '';
+    const b = colPitch(H, nd);
+    const xb = xOfDay(H, 0.5) - 0.08*b, xa = Math.max(0, xOfDay(H, 0.5) - 16*b);
+    const rows = tableRows(H, nd, lines, pitch);
+    const I0 = first ? first[0] + '.' : '', J0 = pat ? pat[0] + '.' : '';
+    const firstForms = first ? [first, I0].concat(J0 ? [I0 + J0, I0 + ' ' + J0, I0[0] + ' ' + J0[0], I0[0] + J0[0]] : []) : [];
+    // эталоны: 4 шрифта × обычный/жирный (размытое фото «утолщает» буквы)
+    const tplSet = function(lowCap){
+      const out = [];
+      SPOT_FONTS.forEach(function(f){ [false, true].forEach(function(bold){
+        out.push({ sur:spotTemplate(sur, f, bold, lowCap, P.scale), first:firstForms.map(function(t){ return spotTemplate(t, f, bold, lowCap, P.scale); }).filter(Boolean),
+                   pat:pat ? spotTemplate(pat, f, bold, lowCap, P.scale) : null });
+      }); });
+      return out;
+    };
+    return rows.map(function(row, ri){
+      const hh = row.band.bot(xb) - row.band.top(xb);
+      const n = Math.max(16, Math.min(56, Math.round(hh)));
+      const Z = sampleStrip(P, row.band, xa, xb, 0.05, 0.95, n);
+      const F = stripFragments(Z), fr = F.fr, capH = F.capH;
+      // эталоны обычные и «мелкие» (как на маленьком фото) — берём то, что ближе
+      const lowCap = 0.8*capH*Z.step/(P.scale || 1);
+      const T = tplSet(0).concat(lowCap < 15 && P.scale > 1.15 ? tplSet(lowCap) : []);
+      const spans = fragSpans(F);
+      const after = function(bIdx){ return spans.filter(function(s2){ return s2.a === bIdx + 1 && fr[s2.a].x0 - fr[bIdx].x1 <= 1.5*capH; }); };
+      let best = null;
+      T.forEach(function(t, fi){
+        if(!t.sur) return;
+        spans.forEach(function(s1){
+          if(!aspFits(s1.asp, t.sur)) return;
+          const v1 = spanVec(F, s1); if(!v1) return;
+          const ds = vecDist(v1, t.sur) + s1.pen;
+          if(ds > 1.2) return;
+          let df = first ? 1.2 : 0, fb = -1;
+          if(first) after(s1.b).forEach(function(s2){
+            t.first.forEach(function(tf){
+              if(!aspFits(s2.asp, tf)) return;
+              const v2 = spanVec(F, s2); if(!v2) return;
+              const d = vecDist(v2, tf) + s2.pen;
+              if(d < df){ df = d; fb = s2.b; }
+            });
+          });
+          let bonus = 0;
+          if(t.pat && fb >= 0){
+            let dp = 1;
+            after(fb).forEach(function(s3){ if(!aspFits(s3.asp, t.pat)) return; const v3 = spanVec(F, s3); if(v3){ const d = vecDist(v3, t.pat) + s3.pen; if(d < dp) dp = d; } });
+            bonus = Math.min(dp, 0.5) - 0.5;
+          }
+          // хорошее совпадение фамилии дальше не «соревнуется» — у однофамильцев решает имя
+          const sc = Math.max(ds, IMP_CFG.surFloor) + df + bonus;
+          if(!best || sc < best.s) best = { s:sc, ds:ds, df:df, bonus:bonus, font:fi, x:xa + Z.step*(fr[s1.a].x0 + fr[s1.b].x1)/2 };
+        });
+      });
+      return { i:ri, y:row.y, band:row.band, s:best ? best.s : 9, ds:best ? best.ds : 9, df:best ? best.df : 9, bonus:best ? best.bonus : 0, font:best ? best.font : -1, x:best ? best.x : xa, nFr:fr.length };
+    });
+  }
+
+  // ---------- месяц своими силами: строка дней недели и название месяца над таблицей ----------
+  const WD_NAMES = ['пн','вт','ср','чт','пт','сб','вс'];
+  const MONTH_NOM = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+  function caseVariants(w){ return [w, w[0].toUpperCase() + w.slice(1), w.toUpperCase()]; }
+  function wordTemplates(words){
+    const out = [];
+    words.forEach(function(w, idx){
+      SPOT_FONTS.forEach(function(f){ [false, true].forEach(function(bold){ caseVariants(w).forEach(function(v){ const t = spotTemplate(v, f, bold); if(t) out.push({ idx:idx, t:t }); }); }); });
+    });
+    return out;
+  }
+  let wdTpl = null, monTpl = null;
+  function spotWeekdays(P, H){
+    if(!H || !H.chain || !H.band) return null;
+    if(!wdTpl) wdTpl = wordTemplates(WD_NAMES);
+    const ch = H.chain, g = H.g, B0 = H.band;
+    let best = null;
+    [1, -1, 0.75, -0.75, 1.25, -1.25].forEach(function(off){
+      const win = { top:function(x){ return B0.top(x) + off*g; }, bot:function(x){ return B0.bot(x) + off*g; } };
+      const D = [];
+      for(let j=0;j+1<ch.length;j++){
+        const d = j + H.k; if(d < 1 || d > 31) continue;
+        const w = ch[j+1] - ch[j];
+        const xm = (ch[j] + ch[j+1])/2; if(win.top(xm) < 0 || win.bot(xm) > P.H) continue;
+        const n = Math.max(14, Math.min(40, Math.round(0.8*g)));
+        const F = stripFragments(sampleStrip(P, win, ch[j] + 0.08*w, ch[j+1] - 0.08*w, 0.1, 0.9, n));
+        if(!F.fr.length || F.fr.length > 6) continue;
+        const sp = { a:0, b:F.fr.length - 1, vec:undefined }, v = spanVec(F, sp);
+        if(!v) continue;
+        const dist = [9,9,9,9,9,9,9];
+        wdTpl.forEach(function(o){ const dd = vecDist(v, o.t); if(dd < dist[o.idx]) dist[o.idx] = dd; });
+        D.push({ d:d, dist:dist });
+      }
+      if(D.length < 7) return;
+      const tot = [];
+      for(let o=0;o<7;o++){ let s = 0; D.forEach(function(e){ s += Math.min(1, e.dist[(o + e.d - 1) % 7]); }); tot.push(s/D.length); }
+      const ord = tot.map(function(v, i){ return [v, i]; }).sort(function(a, b){ return a[0] - b[0]; });
+      const r = { wd1:ord[0][1], score:ord[0][0], margin:ord[1][0] - ord[0][0], n:D.length, off:off };
+      if(!best || r.margin > best.margin) best = r;
+    });
+    return best && best.margin >= 0.06 ? best : (best ? Object.assign(best, { weak:true }) : null);
+  }
+  function spotMonthTitle(P, H, nd){
+    if(!H || !H.band) return null;
+    if(!monTpl) monTpl = wordTemplates(MONTH_NOM);
+    const yNow = new Date().getFullYear();
+    const years = [yNow - 1, yNow, yNow + 1];
+    const yTpl = [];
+    years.forEach(function(y, idx){ SPOT_FONTS.forEach(function(f){ [false, true].forEach(function(bold){ const t = spotTemplate(String(y), f, bold); if(t) yTpl.push({ idx:idx, t:t }); }); }); });
+    const b = colPitch(H, nd || 31), g = H.g, B0 = H.band;
+    const xa = Math.max(0, xOfDay(H, 0.5) - 14*b), xb = Math.min(P.W - 1, xOfDay(H, (nd || 31) + 1.5));
+    let bestM = null, bestY = null;
+    const perM = new Array(12).fill(9);
+    // строки текста над шапкой: ищем по горизонтальной проекции «чернил», затем каждую строку разбираем отдельно
+    const top = function(x){ return B0.top(x) - 6*g; }, bot = function(x){ return B0.top(x) - 0.1*g; };
+    const regTop = top((xa + xb)/2);
+    const lines = [];
+    if(regTop > -3*g){
+      const nR = Math.max(40, Math.min(240, Math.round(5.9*g)));
+      const reg = { top:function(x){ return Math.max(0, top(x)); }, bot:bot };
+      const Z = sampleStrip(P, reg, xa, xb, 0, 1, nR);
+      const M = inkMask(Z), w = Z.w;
+      const prof = new Float32Array(nR);
+      for(let r=0;r<nR;r++){ let c = 0; for(let i=0;i<w;i++) c += M[r*w+i]; prof[r] = c/w; }
+      const hRow = (bot((xa+xb)/2) - reg.top((xa+xb)/2))/nR;   // пикселей фото на строку выборки
+      for(let r=0;r<nR;){
+        if(prof[r] > 0.004){ let j = r; while(j+1 < nR && prof[j+1] > 0.004) j++; const hh = (j - r + 1)*hRow; if(hh >= 0.25*g) lines.push([r*hRow, (j+1)*hRow]); r = j+1; }
+        else r++;
+      }
+      lines.forEach(function(L){
+        const y0 = L[0], y1 = L[1], hh = y1 - y0, pad = 0.3*hh;
+        const win = { top:function(x){ return Math.max(0, top(x)) + y0 - pad; }, bot:function(x){ return Math.max(0, top(x)) + y1 + pad; } };
+        const n = Math.max(18, Math.min(64, Math.round(hh + 2*pad)));
+        const F = stripFragments(sampleStrip(P, win, xa, xb, 0, 1, n));
+        if(!F.fr.length) return;
+        fragSpans(F).forEach(function(sp){
+          let v = null;
+          monTpl.forEach(function(o){
+            if(!aspFits(sp.asp, o.t)) return;
+            v = v || spanVec(F, sp); if(!v) return;
+            const d = vecDist(v, o.t) + sp.pen;
+            if(d < perM[o.idx]) perM[o.idx] = d;
+            if(!bestM || d < bestM.d) bestM = { d:d, m:o.idx };
+          });
+          yTpl.forEach(function(o){
+            if(!aspFits(sp.asp, o.t)) return;
+            v = v || spanVec(F, sp); if(!v) return;
+            const d = vecDist(v, o.t) + sp.pen;
+            if(!bestY || d < bestY.d) bestY = { d:d, y:years[o.idx] };
+          });
+        });
+      });
+    }
+    let m2 = 9, m2i = -1; perM.forEach(function(d, i){ if(bestM && i !== bestM.m && d < m2){ m2 = d; m2i = i; } });
+    const mMargin = bestM ? m2 - bestM.d : 0;
+    // похожие названия («июнь»/«июль») — отдаём обоих кандидатов, решат дни недели и число дней
+    const close = bestM && bestM.d < 0.3 && mMargin < 0.05;
+    return { m:bestM && bestM.d < 0.45 && (mMargin >= 0.05 || close) ? bestM.m : -1, m2:close ? m2i : -1, mD:bestM ? bestM.d : 9, mMargin:mMargin,
+             year:bestY && bestY.d < 0.35 ? bestY.y : null, yD:bestY ? bestY.d : 9 };
+  }
+
+  // Месяц без OCR: дни недели (+ число дней) и, если этого мало, название месяца над таблицей
+  function ownMonthEvidence(P, H){
+    const ev = { m:-1, year:null, wd1:-1 };
+    let wd = null;
+    try{ wd = spotWeekdays(P, H); }catch(e){ wd = null; }
+    if(wd && !wd.weak){ ev.wd1 = wd.wd1; ev.wdStrong = wd.margin >= 0.12; ev.wdMargin = wd.margin; }
+    // сколько месяцев рядом начинаются с того же дня недели — если один, название не нужно
+    let same = 0;
+    if(ev.wd1 >= 0){
+      const now = new Date();
+      for(let k=-6;k<=9;k++){ const dt = new Date(now.getFullYear(), now.getMonth()+k, 1); if((dt.getDay()+6) % 7 === ev.wd1) same++; }
+    }
+    if(ev.wd1 < 0 || same > 1 || (wd && wd.margin < 0.12)){
+      let mt = null;
+      try{ mt = spotMonthTitle(P, H, H.maxDay >= 28 ? H.maxDay : 31); }catch(e){ mt = null; }
+      if(mt){ ev.m = mt.m; ev.m2 = mt.m2; ev.year = mt.year; ev.mStrong = mt.mD < 0.3 && mt.mMargin >= 0.08; ev.mMid = mt.mD < 0.2; ev.mD = mt.mD; ev.mMargin = mt.mMargin; }
+    }
+    return ev;
+  }
+
   // ---------- месяц и год ----------
-  function detectMonth(words, H, maxDay){
+  function detectMonth(words, H, maxDay, own){
+    words = words || []; own = own || {};
     const now = new Date();
     const names = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
     let nameM = -1, nameScore = 0, year = null;
@@ -2417,20 +3785,33 @@
       const d = Math.round(dayOfX(H, w.xc, 31));
       if(d >= 1 && d <= 31) votes[((idx - (d-1)) % 7 + 7) % 7]++;
     });
-    const vmax = Math.max.apply(null, votes), wd1 = vmax >= 2 ? votes.indexOf(vmax) : -1;
-    let best = null;
+    const vmax = Math.max.apply(null, votes);
+    let wd1 = vmax >= 2 ? votes.indexOf(vmax) : -1, wdW = 2;
+    if(nameM < 0 && own.m >= 0) nameM = own.m;
+    if(!year && own.year) year = own.year;
+    if(wd1 < 0 && own.wd1 != null && own.wd1 >= 0){ wd1 = own.wd1; wdW = own.wdStrong ? 3 : 1.5; }
+    // число дней: из шапки, если последние числа (28…31) прочитаны уверенно
+    const nDays = (H && H.nDays) || 0;
+    // название месяца из OCR — надёжно; своё (по образцу) — только как подсказка
+    const nameW = nameScore > 0 ? 3 : (own.mStrong ? 1.5 : (own.mMid ? 1.0 : 0.4));
+    const name2 = nameScore > 0 ? -1 : (own.m2 != null ? own.m2 : -1);
+    const cand = [];
     for(let k=-12;k<=12;k++){
       const dt = new Date(now.getFullYear(), now.getMonth()+k, 1), m = dt.getMonth(), y = dt.getFullYear();
       let s = 0;
-      if(m === nameM) s += 3;
-      if(year && y === year) s += 1.5;
-      if(wd1 >= 0 && ((dt.getDay()+6) % 7) === wd1) s += 2;
-      if(maxDay >= 28 && daysInMonth(y, m) === maxDay) s += 1;
-      s -= Math.abs(k)*0.01 + (k < 0 ? 0.005 : 0); // при равенстве — ближайший, лучше будущий
-      if(!best || s > best.s) best = { s:s, m:m, y:y };
+      if(nameM >= 0 && m === nameM) s += nameW;
+      else if(name2 >= 0 && m === name2) s += 0.6*nameW;
+      if(year) s += (y === year ? 1.5 : -1);
+      if(wd1 >= 0) s += ((dt.getDay()+6) % 7) === wd1 ? wdW : -wdW;
+      if(nDays) s += daysInMonth(y, m) === nDays ? 2 : -2;
+      else if(maxDay >= 28 && daysInMonth(y, m) < maxDay) s -= 2;
+      // обычно загружают график текущего или следующего месяца
+      s += k === 0 || k === 1 ? 0.4 : (k === -1 ? 0.3 : (k === 2 ? 0.2 : -0.03*Math.abs(k) - (Math.abs(k) > 6 ? 0.3 : 0)));
+      cand.push({ s:s, m:m, y:y });
     }
-    const dtB = new Date(best.y, best.m, 1);
-    const sure = best.m === nameM || (wd1 >= 0 && ((dtB.getDay()+6) % 7) === wd1 && maxDay >= 28 && daysInMonth(best.y, best.m) === maxDay);
+    cand.sort(function(a, b){ return b.s - a.s; });
+    const best = cand[0];
+    const sure = cand[1] ? best.s - cand[1].s >= 1.5 : true;
     return { month:best.m, year:best.y, sure:sure };
   }
 
@@ -2463,62 +3844,139 @@
   }
 
   // ---------- весь процесс ----------
+  function tick(){ return new Promise(function(r){ setTimeout(r, 16); }); }
+  function rotateQuarter(img, dir){
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const k = Math.min(1, 3000/Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(h*k); c.height = Math.round(w*k);
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    ctx.translate(c.width/2, c.height/2); ctx.rotate(dir*Math.PI/2);
+    ctx.drawImage(img, -w*k/2, -h*k/2, w*k, h*k);
+    return c;
+  }
+  // Картинка участка строки (для подтверждения «это ты?»)
+  function stripImage(P, band, xa, xb, hOut){
+    const hh = band.bot((xa+xb)/2) - band.top((xa+xb)/2);
+    const n = Math.max(12, Math.min(64, Math.round(hh*1.1)));
+    const Z = sampleStrip(P, band, xa, xb, -0.05, 1.05, n);
+    const c = document.createElement('canvas'); c.width = Z.w; c.height = Z.n;
+    const ctx = c.getContext('2d'), id = ctx.createImageData(Z.w, Z.n);
+    for(let k=0;k<Z.S.length;k++){ const v = Z.S[k]; id.data[k*4] = id.data[k*4+1] = id.data[k*4+2] = v; id.data[k*4+3] = 255; }
+    ctx.putImageData(id, 0, 0);
+    const out = document.createElement('canvas'), sc = (hOut || 40)/Z.n;
+    out.width = Math.max(1, Math.round(Z.w*sc)); out.height = Math.round(Z.n*sc);
+    const o = out.getContext('2d'); o.imageSmoothingQuality = 'high'; o.drawImage(c, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', 0.85);
+  }
+  // Уверенно ли найдена строка: лучшая заметно лучше следующей
+  function decidePerson(rows){
+    const r = (rows || []).filter(function(x){ return x.s < 5; }).sort(function(a, b){ return a.s - b.s; });
+    if(!r.length) return { ok:false, ranked:[] };
+    const gap = r[1] ? r[1].s - r[0].s : 1;
+    return { ok:r[0].s < 0.95 && gap >= 0.1, best:r[0], gap:gap, ranked:r };
+  }
+  function nameArea(D){
+    const b = colPitch(D.H, D.nd);
+    return { xa:Math.max(0, xOfDay(D.H, 0.5) - 16*b), xb:xOfDay(D.H, 0.5) - 0.08*b };
+  }
   async function processImport(file){
     const run = ++impRun;
     const p = impProfile();
-    imp = { stage:'loading', msg:'Открываю фото…', pct:0, result:null, pickUrl:null, error:null };
+    imp = { stage:'loading', msg:'Открываю фото…', pct:5, result:null, pickUrl:null, error:null };
     render();
     try{
       const img = await loadImageFromFile(file);
       if(run !== impRun) return;
-      const P = prepImage(img);
-      imp.msg = 'Загружаю модуль распознавания…'; render();
-      await ensureTesseract();
+      imp.msg = 'Выравниваю фото…'; imp.pct = 15; softRender(); await tick();
+      let P = prepImage(img);
       if(run !== impRun) return;
-      const words = await runOCR(P.canvas, run);
+      imp.msg = 'Ищу таблицу и числа месяца…'; imp.pct = 35; softRender(); await tick();
+      let H = null, words = null;
+      try{ H = findHeaderOwn(P); }catch(e){ H = null; }
+      // снято «боком» (телефон повёрнут) — пробуем повернуть на четверть оборота
+      for(let q=0; !H && q<2; q++){
+        if(run !== impRun) return;
+        const rc = rotateQuarter(img, q === 0 ? 1 : -1);
+        const P2 = prepImage(rc);
+        let H2 = null; try{ H2 = findHeaderOwn(P2); }catch(e){ H2 = null; }
+        if(H2){ P = P2; H = H2; }
+      }
       if(run !== impRun) return;
-      imp.msg = 'Ищу твою строку в таблице…'; imp.pct = 100; render();
-      await new Promise(function(r){ setTimeout(r, 30); });
-      const H = fitHeader(words, P.W);
-      if(!H) throw new Error('Не нашёл на фото шапку с номерами дней. Сфотографируй таблицу ровнее и так, чтобы строка с числами месяца попала в кадр.');
-      const mon = detectMonth(words, H, H.maxDay);
+      if(!H){
+        // запасной путь — движок распознавания текста (скачивается один раз)
+        imp.msg = 'Загружаю модуль распознавания…'; softRender();
+        await ensureTesseract();
+        if(run !== impRun) return;
+        words = await runOCR(P.canvas, run);
+        if(run !== impRun) return;
+        H = fitHeader(words, P.W);
+        if(!H) throw new Error('Не нашёл на фото шапку с номерами дней. Сфотографируй таблицу ровнее и так, чтобы строка с числами месяца попала в кадр.');
+      }
+      imp.msg = 'Определяю месяц…'; imp.pct = 55; softRender(); await tick();
+      let ev = {};
+      if(H.own){ try{ ev = ownMonthEvidence(P, H); }catch(e){ ev = {}; } }
+      const mon = detectMonth(words, H, H.maxDay, ev);
       const nd = daysInMonth(mon.year, mon.month);
-      const b = colPitch(H, nd);
-      const xStart = Math.max(0, xOfDay(H, 0.5) - 12*b);
-      const lines = trackLines(P, xStart, Math.min(P.W, xOfDay(H, nd+0.5) + 2), H.py[1] || 0, Math.max(10, Math.round(2*b)));
-      const pitch = estimatePitch(lines, xOfDay(H, 1), b) || 1.8*H.h;
-      impData = { P:P, words:words, H:H, nd:nd, lines:lines, pitch:pitch, month:mon };
-      const who = findPerson(words, p.fio);
-      if(!who){
-        // не нашли — просим показать строку на фото
-        imp.stage = 'pick';
-        imp.pickUrl = P.canvas.toDataURL('image/jpeg', 0.8);
-        imp.pickRatio = P.W / P.H;
-        render();
+      const TG = tableGeometry(P, H, nd);
+      if(run !== impRun) return;
+      imp.msg = 'Ищу твою строку…'; imp.pct = 75; softRender(); await tick();
+      let spot = null;
+      try{ spot = spotPerson(P, H, nd, TG.lines, TG.pitch, p.fio); }catch(e){ spot = null; }
+      impData = { P:P, words:words, H:H, nd:nd, lines:TG.lines, pitch:TG.pitch, month:mon };
+      const dec = decidePerson(spot);
+      imp.dbg = { spot:(dec.ranked || []).slice(0, 4).map(function(r){ return [r.i, +r.s.toFixed(3)]; }), gap:dec.gap, own:!!H.own, wd:ev.wd1, m:ev.m };
+      if(dec.ok){
+        const r = dec.best, y = (r.band.top(r.x) + r.band.bot(r.x))/2;
+        finishImport({ x:r.x, y:y }, p.fio, false, r.band);
         return;
       }
-      finishImport({ x:who.x, y:who.y }, who.label, false);
+      // не уверены — пробуем прочитать имена движком распознавания текста
+      if(!words){
+        try{
+          imp.msg = 'Уточняю имя… (загружаю модуль распознавания)'; imp.pct = 85; softRender();
+          await ensureTesseract();
+          if(run !== impRun) return;
+          words = await runOCR(P.canvas, run);
+          impData.words = words;
+        }catch(e){ if(e && e.message === 'cancelled') return; words = null; }
+        if(run !== impRun) return;
+      }
+      const who = words ? findPerson(words, p.fio) : null;
+      if(who){ finishImport({ x:who.x, y:who.y }, who.label, false); return; }
+      // спрашиваем: показываем лучшие строки-кандидаты
+      const na = nameArea(impData);
+      imp.stage = 'pick';
+      imp.cands = (dec.ranked || []).slice(0, 4).map(function(r){
+        let url = null; try{ url = stripImage(P, r.band, na.xa, na.xb, 40); }catch(e){}
+        return { x:r.x, y:(r.band.top(r.x) + r.band.bot(r.x))/2, url:url };
+      }).filter(function(c){ return c.url; });
+      imp.pickPhoto = !imp.cands.length;
+      imp.pickUrl = P.canvas.toDataURL('image/jpeg', 0.8);
+      imp.pickRatio = P.W / P.H;
+      render();
     }catch(e){
       if(run !== impRun) return;
       let msg = (e && e.message) || '';
       if(msg === 'image') msg = 'Не удалось открыть фото. Попробуй другое.';
-      else if(msg === 'no Tesseract' || msg.indexOf('xlsx') === 0 || msg === 'start' || /load|fetch|network|Failed/i.test(msg)) msg = 'Не удалось загрузить модуль распознавания. Проверь интернет и попробуй ещё раз (нужен только при первом использовании).';
+      else if(msg === 'no Tesseract' || msg.indexOf('xlsx') === 0 || msg === 'start' || /load|fetch|network|Failed/i.test(msg)) msg = 'Не удалось разобрать таблицу, а модуль распознавания текста не загрузился. Проверь интернет или сфотографируй таблицу ровнее и крупнее.';
       else if(!/[а-я]/i.test(msg)) msg = 'Не получилось разобрать фото. Попробуй снять таблицу ровнее и крупнее.';
       imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
       impData = null;
       showAlert(msg);
     }
   }
-  function finishImport(anchor, label, manual){
+  function finishImport(anchor, label, manual, band){
     const D = impData; if(!D) return;
     const row = readRow(D.P, D.H, D.nd, anchor, D.pitch, D.lines, D.words);
     const days = {};
     Object.keys(row.days).forEach(function(k){ if(row.days[k] !== 'text') days[+k] = row.days[k]; });
     const orig = Object.assign({}, days);
-    let preview = null;
+    let preview = null, nameUrl = null;
     try{ preview = rowPreview(D.P, D.H, D.nd, row, days); }catch(e){}
-    imp = { stage:'review', msg:'', pct:0, pickUrl:null, error:null, result:{
-      month:D.month.month, year:D.month.year, monthSure:D.month.sure, days:days, orig:orig, label:label, manual:manual, preview:preview
+    try{ const na = nameArea(D); nameUrl = stripImage(D.P, row.band, na.xa, na.xb, 34); }catch(e){}
+    const dbg = imp.dbg;
+    imp = { stage:'review', msg:'', pct:0, pickUrl:null, error:null, dbg:dbg, result:{
+      month:D.month.month, year:D.month.year, monthSure:D.month.sure, days:days, orig:orig, label:label, manual:manual, preview:preview, nameUrl:nameUrl
     } };
     // картинка больше не нужна — освобождаем память
     impData = null;
@@ -2537,8 +3995,16 @@
       html += '  <div class="imp-hint">Фото обрабатывается прямо на телефоне и никуда не отправляется.</div>';
       html += '  <div class="choice" style="margin-top:12px;color:var(--muted);text-align:center;" onclick="WC.importCancel()">Отмена</div>';
     } else if(imp.stage === 'pick'){
-      html += '  <div class="imp-status">Не нашёл «'+esc(p.fio)+'» на фото. Нажми на свою фамилию на снимке.</div>';
-      html += '  <div class="imp-pick"><img src="'+imp.pickUrl+'" alt="Фото графика" onclick="WC.importPick(event)"></div>';
+      if(imp.cands && imp.cands.length && !imp.pickPhoto){
+        html += '  <div class="imp-status">Не уверен, какая строка твоя. Нажми на строку с «'+esc(p.fio)+'»:</div>';
+        imp.cands.forEach(function(c, i){
+          html += '  <div class="imp-cand" style="border-color:'+hexA(pc,0.45)+';" onclick="WC.importPickCand('+i+')"><img src="'+c.url+'" alt="Строка '+(i+1)+'"></div>';
+        });
+        html += '  <div class="choice" style="margin-top:10px;color:'+pc+';text-align:center;" onclick="WC.importShowPhoto()">Моей строки тут нет — показать на фото</div>';
+      } else {
+        html += '  <div class="imp-status">Не нашёл «'+esc(p.fio)+'» на фото. Нажми на свою фамилию на снимке.</div>';
+        html += '  <div class="imp-pick"><img src="'+imp.pickUrl+'" alt="Фото графика" onclick="WC.importPick(event)"></div>';
+      }
       html += '  <div class="choice" style="margin-top:12px;color:var(--muted);text-align:center;" onclick="WC.importCancel()">Отмена</div>';
     } else if(imp.stage === 'review' && imp.result){
       html += renderImportReview(p, pc);
@@ -2551,7 +4017,7 @@
         html += '<div class="choice'+(a?' active':'')+'" style="color:'+w.color+(a?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.importSet(\'importWp\',\''+w.id+'\')">'+esc(w.name)+'</div>';
       });
       html += '  </div></div>';
-      html += '  <div class="field"><label>Часов в смене, где стоит «1»</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
+      html += '  <div class="field"><label>Часов в смене:</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
       html += '  <div class="field"><label>Дни без смены</label><div class="choice-row">';
       [['keep','Не трогать'],['off','Отметить выходными']].forEach(function(o){
         const a = p.importOff === o[0];
@@ -2559,8 +4025,12 @@
       });
       html += '  </div></div>';
       html += '  <input type="file" id="impFile" accept="image/*" style="display:none" onchange="WC.importFile(this.files && this.files[0]); this.value=\'\';">';
-      html += '  <div class="choice active" style="margin-top:6px;text-align:center;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';" onclick="WC.importChoose()">Загрузить фото графика</div>';
-      html += '  <div class="imp-hint">Работает без интернета, кроме самого первого раза: тогда один раз скачивается модуль распознавания русского текста (около 10–15 МБ).</div>';
+      html += '  <input type="file" id="impCam" accept="image/*" capture="environment" style="display:none" onchange="WC.importFile(this.files && this.files[0]); this.value=\'\';">';
+      html += '  <div class="imp-actions">';
+      html += '    <div class="choice active imp-scan-btn" style="color:'+pc+';background:'+pc+'22;box-shadow:0 0 12px '+pc+';" onclick="WC.importScan()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/></svg><span>Сканировать</span></div>';
+      html += '    <div class="choice imp-scan-btn" style="color:'+pc+';" onclick="WC.importChoose()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>Из галереи</span></div>';
+      html += '  </div>';
+      html += '  <div class="imp-hint">«Сканировать» — сфотографировать бумажный график или экран прямо из приложения. Всё распознаётся на телефоне, без интернета: фото никуда не отправляется.</div>';
     }
     html += '</div>';
     return html;
@@ -2594,6 +4064,7 @@
     const R = imp.result, nd = daysInMonth(R.year, R.month);
     let html = '';
     html += '  <div class="imp-status">Нашёл строку: <b>'+esc(R.label)+'</b>'+(R.manual?' (указана вручную)':'')+'</div>';
+    if(R.nameUrl) html += '  <div class="imp-name"><img src="'+R.nameUrl+'" alt="Имя на фото"></div>';
     if(R.preview) html += '  <div class="imp-preview"><img src="'+R.preview+'" alt="Строка из фото"></div><div class="imp-hint" style="margin-top:4px;">Сверху — числа месяца с фото, снизу — твоя строка. Зелёные метки — найденные смены.</div>';
     html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px;">';
     html += '    <div class="nav-btn" onclick="WC.importMonth(-1)">‹</div>';
@@ -2619,7 +4090,7 @@
       html += '<div class="choice'+(a?' active':'')+'" style="color:'+w.color+(a?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.importSet(\'importWp\',\''+w.id+'\')">'+esc(w.name)+'</div>';
     });
     html += '  </div></div>';
-    html += '  <div class="field"><label>Часов в смене, где стоит «1»</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours2" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
+    html += '  <div class="field"><label>Часов в смене:</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="impHours2" value="'+numText(p.importHours)+'" oninput="WC.importEdit(\'importHours\', this.value)"></div>';
     html += '  <div class="confirm-actions" style="margin-top:14px;">';
     html += '    <div class="confirm-btn cancel" onclick="WC.importCancel()">Отмена</div>';
     html += '    <div class="confirm-btn ok" style="background:'+pc+';border-color:'+pc+';box-shadow:0 0 12px '+hexA(pc,0.5)+';" onclick="WC.importApply()">Записать смены</div>';
@@ -2627,7 +4098,93 @@
     return html;
   }
 
+  if(window.__WC_TEST__) window.__impInt = { readRowGlyphs:readRowGlyphs, setCfg:function(o){ Object.assign(IMP_CFG, o); }, nameStrip:nameStrip, setSpotMode:function(m){ SPOT_MODE = m; }, glyphFeatures:glyphFeatures, mlpClassify:mlpClassify, numTemplates:numTemplates, ownMonthEvidence:ownMonthEvidence, spotWeekdays:spotWeekdays, spotMonthTitle:spotMonthTitle, findHeaderOwn:findHeaderOwn, readCellNumber:readCellNumber, bandSeparators:bandSeparators, prepImage:prepImage, loadImageFromFile:loadImageFromFile, runOCR:runOCR, fitHeader:fitHeader, detectMonth:detectMonth,
+    tableGeometry:tableGeometry, trackLines:trackLines, extendLinesLeft:extendLinesLeft, lineY:lineY, estimatePitch:estimatePitch, colPitch:colPitch, xOfDay:xOfDay, tableRows:tableRows, spotPerson:spotPerson, findPerson:findPerson,
+    readRow:readRow, stripFragments:stripFragments, fragSpans:fragSpans, spanVec:spanVec, vecDist:vecDist, inkMask:inkMask, components:components, sampleStrip:sampleStrip, spotTemplate:spotTemplate, polyval:polyval, daysInMonth:daysInMonth };
+
+  // ---------- сканер: камера прямо в приложении ----------
+  let scanStream = null, scanTorch = false, scanSeq = 0;
+  function closeScanner(){
+    scanSeq++;
+    if(scanStream){ try{ scanStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} scanStream = null; }
+    const el = document.getElementById('scanner'); if(el) el.remove();
+    scanTorch = false;
+  }
+  document.addEventListener('visibilitychange', function(){ if(document.hidden && document.getElementById('scanner')) closeScanner(); });
+  function scanFallback(){
+    // если камеру открыть нельзя — системная камера iPhone
+    const el = document.getElementById('impCam'); if(el) el.click();
+  }
+  async function openScanner(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ scanFallback(); return; }
+    closeScanner();
+    const seq = scanSeq;
+    const root = document.createElement('div');
+    root.id = 'scanner'; root.className = 'scanner';
+    root.innerHTML = '<video playsinline muted autoplay></video>' +
+      '<div class="scan-shade"><i></i><i></i><i></i><i></i></div>' +
+      '<div class="scan-hint">Числа месяца и твоя строка — в рамке. Держи ровно, без бликов. Широкую таблицу снимай, повернув телефон.</div>' +
+      '<div class="scan-bar">' +
+        '<div class="scan-round" id="scanClose" aria-label="Закрыть"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>' +
+        '<button class="scan-shot" id="scanShot" aria-label="Снять"></button>' +
+        '<div class="scan-round" id="scanTorch" aria-label="Фонарик" style="visibility:hidden"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>' +
+      '</div><div class="scan-flash"></div>';
+    document.body.appendChild(root);
+    const video = root.querySelector('video');
+    root.querySelector('#scanClose').onclick = closeScanner;
+    let stream = null;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ ideal:'environment' }, width:{ ideal:3840 }, height:{ ideal:2160 } } });
+    }catch(e){
+      if(seq !== scanSeq || !root.isConnected) return;
+      // после отказа Safari не даст открыть камеру без нового нажатия — показываем кнопку
+      const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      root.querySelector('.scan-shade').style.display = 'none';
+      root.querySelector('.scan-hint').style.display = 'none';
+      root.querySelector('#scanShot').style.visibility = 'hidden';
+      const box = document.createElement('div'); box.className = 'scan-err';
+      box.innerHTML = (denied ? 'Нет доступа к камере. Разреши камеру для этого сайта в настройках Safari (значок «аА» → «Настройки веб-сайта») или сними фото системной камерой.'
+                              : 'Не получилось открыть камеру. Можно снять фото системной камерой.') +
+        '<div class="choice active" id="scanSys" style="color:#39FF14;background:#39FF1422;box-shadow:0 0 12px #39FF14;">Открыть системную камеру</div>';
+      root.appendChild(box);
+      box.querySelector('#scanSys').onclick = function(){ closeScanner(); scanFallback(); };
+      return;
+    }
+    if(seq !== scanSeq || !root.isConnected){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} return; }
+    scanStream = stream;
+    video.srcObject = stream;
+    try{ await video.play(); }catch(e){}
+    if(seq !== scanSeq || !root.isConnected) return;
+    const track = stream.getVideoTracks()[0];
+    try{
+      const caps = track.getCapabilities ? track.getCapabilities() : null;
+      if(caps && caps.torch){
+        const tb = root.querySelector('#scanTorch'); tb.style.visibility = 'visible';
+        tb.onclick = function(){ scanTorch = !scanTorch; tb.classList.toggle('on', scanTorch); track.applyConstraints({ advanced:[{ torch:scanTorch }] }).catch(function(){}); };
+      }
+    }catch(e){}
+    let taken = false;
+    root.querySelector('#scanShot').onclick = function(){
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if(!vw || !vh || taken) return;
+      taken = true;
+      const c = document.createElement('canvas'); c.width = vw; c.height = vh;
+      c.getContext('2d').drawImage(video, 0, 0, vw, vh);
+      const fl = root.querySelector('.scan-flash'); fl.style.opacity = '0.8'; setTimeout(function(){ fl.style.opacity = '0'; }, 120);
+      c.toBlob(function(blob){
+        closeScanner();
+        if(blob) processImport(blob);
+      }, 'image/jpeg', 0.95);
+    };
+  }
+
   const importActions = {
+    importScan(){
+      const p = impProfile();
+      if(!normRu(p.fio)){ showAlert('Сначала впиши фамилию и имя — так, как они написаны в графике.'); return; }
+      if(!p.importWp){ showAlert('Сначала добавь место работы в настройках.'); return; }
+      openScanner();
+    },
     importChoose(){
       const p = impProfile();
       if(!normRu(p.fio)){ showAlert('Сначала впиши фамилию и имя — так, как они написаны в графике.'); return; }
@@ -2649,11 +4206,18 @@
     },
     importCancel(){
       impRun++;
+      closeScanner();
       if(impWorker){ try{ impWorker.terminate(); }catch(e){} impWorker = null; }
       imp = { stage:'idle', msg:'', pct:0, result:null, pickUrl:null, error:null };
       impData = null;
       render();
     },
+    importPickCand(i){
+      if(!impData || !imp.cands || !imp.cands[i]) return;
+      const c = imp.cands[i];
+      finishImport({ x:c.x, y:c.y }, impProfile().fio, true);
+    },
+    importShowPhoto(){ imp.pickPhoto = true; render(); },
     importPick(ev){
       if(!impData) return;
       const r = ev.target.getBoundingClientRect();
