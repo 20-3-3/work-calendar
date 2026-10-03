@@ -209,6 +209,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .day .dot{
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 4px;
+    flex: none;
+  }
   .day.dayoff{ background: var(--dayoff-tint); }
   .day .bar{
     position:absolute;
@@ -844,14 +851,14 @@
   // Schema version of the persisted data. Bump this and add a step in migrateState()
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
-  const CURRENT_VERSION = 3;
-  const APP_BUILD = 'iOS · 2026-09-29 · v15';
+  const CURRENT_VERSION = 4;
+  const APP_BUILD = 'iOS · 2026-10-03 · v16';
 
   let state = {
     version: CURRENT_VERSION,
     workplaces: [
-      { id:'w1', name:'Кофейня', color:'#FF9500', payType:'hourly', rate:300, currency:'₽' },
-      { id:'w2', name:'Кинотеатр', color:'#00E5FF', payType:'hourly', rate:300, currency:'₽' }
+      { id:'w1', name:'Кофейня', color:'#FF9500', payType:'hourly', rate:300, currency:'₽', shiftHours:8 },
+      { id:'w2', name:'Кинотеатр', color:'#00E5FF', payType:'hourly', rate:300, currency:'₽', shiftHours:8 }
     ],
     shifts: {},
     payments: []
@@ -884,6 +891,7 @@
     hours: 8,
     fillMode: 'month' // 'month' = до конца месяца начиная с startDate, 'week' = до конца календарной недели (по воскресенье)
   };
+  let patternHoursTouched = false;
   let exportForm = yearBounds(statsYear);
   let paymentFormState = null; // { periodFrom, periodTo, workplaceId, amount, note }
 
@@ -902,12 +910,38 @@
     return '#FF9500'; // осень
   }
 
+  // Оплата у каждой работы задаётся и за смену, и за час — одно считается из другого через
+  // «Часов в смене». rate хранит то число, которое человек ввёл сам (payType показывает, какое:
+  // 'daily' — за смену, 'hourly' — за час), второе всегда вычисляется — так нет накопления округлений.
+  // Смена оплачивается по фактическим часам: ушёл раньше — в календаре меньше часов, сумма меньше.
+  function wpShiftHours(wp){ const h = wp && wp.shiftHours; return (typeof h === 'number' && h > 0) ? h : 8; }
+  function wpHourRate(wp){ return wp.payType === 'daily' ? wp.rate / wpShiftHours(wp) : wp.rate; }
+  function wpShiftPay(wp){ return wp.payType === 'daily' ? wp.rate : wp.rate * wpShiftHours(wp); }
+  // Часы смены: если не указаны — полная смена этой работы
+  function shiftHoursOf(shift, wp){
+    return (typeof shift.hours === 'number' && isFinite(shift.hours)) ? shift.hours : (wp ? wpShiftHours(wp) : 0);
+  }
   function calcPay(shift){
     if(!shift || !shift.workplaceId) return 0;
     const wp = getWorkplace(shift.workplaceId);
     if(!wp) return 0;
-    if(wp.payType === 'hourly') return (shift.hours||0) * wp.rate;
-    return wp.rate;
+    const h = shiftHoursOf(shift, wp);
+    if(wp.payType === 'daily'){
+      const full = wpShiftHours(wp);
+      return h === full ? wp.rate : wp.rate * h / full;
+    }
+    return h * wp.rate;
+  }
+  // Самая частая длина смены у работы — по уже записанным сменам (для перехода со старых версий)
+  function typicalShiftHours(shifts, wpId){
+    const cnt = {};
+    Object.keys(shifts || {}).forEach(function(k){
+      const s = shifts[k];
+      if(s && s.workplaceId === wpId && typeof s.hours === 'number' && s.hours > 0 && s.hours <= 24) cnt[s.hours] = (cnt[s.hours] || 0) + 1;
+    });
+    let best = null, bc = 0;
+    Object.keys(cnt).forEach(function(h){ const v = +h; if(cnt[h] > bc || (cnt[h] === bc && v > best)){ best = v; bc = cnt[h]; } });
+    return best;
   }
 
   function computeYearStats(year){
@@ -933,10 +967,11 @@
         totalPay += pay;
         totalShifts++;
         if(wpStats[s.workplaceId]){
+          const h = shiftHoursOf(s, getWorkplace(s.workplaceId));
           wpStats[s.workplaceId].pay += pay;
           wpStats[s.workplaceId].days++;
-          wpStats[s.workplaceId].hours += (s.hours||0);
-          totalHours += (s.hours||0);
+          wpStats[s.workplaceId].hours += h;
+          totalHours += h;
         }
       }
     });
@@ -994,6 +1029,14 @@
       if(!Array.isArray(parsed.payments)) parsed.payments = [];
       v = 3;
     }
+    if(v < 4){
+      // v3 -> v4: у каждой работы появилась длина смены (shiftHours) — из неё оплата за смену
+      // пересчитывается в оплату за час и обратно. Берём самую частую длину уже записанных смен.
+      (Array.isArray(parsed.workplaces) ? parsed.workplaces : []).forEach(function(w){
+        if(w && !(typeof w.shiftHours === 'number' && w.shiftHours > 0)) w.shiftHours = typicalShiftHours(parsed.shifts, w.id) || 8;
+      });
+      v = 4;
+    }
     parsed.version = v;
     return parsed;
   }
@@ -1008,10 +1051,11 @@
       payType: (w && w.payType==='daily') ? 'daily' : 'hourly',
       rate: (w && typeof w.rate==='number') ? w.rate : (parseFloat(w && w.rate) || 0),
       currency: (w && w.currency) ? w.currency : '₽',
-      archived: !!(w && w.archived)
+      archived: !!(w && w.archived),
+      shiftHours: (w && typeof w.shiftHours==='number' && w.shiftHours > 0) ? w.shiftHours : (typicalShiftHours(state.shifts, w && w.id ? w.id : ('w'+(i+1))) || 8)
     }));
     if(!list.some(w=>!w.archived)){
-      list.push({ id:'w1', name:'Работа 1', color:SWATCH_COLORS[0], payType:'hourly', rate:0, currency:'₽' });
+      list.push({ id:'w1', name:'Работа 1', color:SWATCH_COLORS[0], payType:'hourly', rate:0, currency:'₽', shiftHours:8 });
     }
     state.workplaces = list;
     state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
@@ -1091,9 +1135,20 @@
     }
   }
 
+  // Число по-русски: «12 345,6» (неразрывный пробел между тысячами, запятая, до 2 знаков).
+  // Свой форматтер вместо toLocaleString: первый вызов toLocaleString грузит данные локали
+  // и подтормаживал первое открытие «Отчётов».
+  function fmtNum(n){
+    const neg = n < 0;
+    const cents = Math.round(Math.abs(n) * 100);
+    const int = Math.floor(cents / 100), frac = cents % 100;
+    let out = String(int).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+    if(frac) out += ',' + (frac < 10 ? '0' + frac : String(frac % 10 ? frac : frac / 10));
+    return (neg ? '-' : '') + out;
+  }
   function fmtMoney(n, currency){
     const rounded = Math.round(n*100)/100;
-    return rounded.toLocaleString('ru-RU') + ' ' + (currency||'₽');
+    return fmtNum(rounded) + ' ' + (currency||'₽');
   }
 
   function sanitizeSheetName(name, fallback){
@@ -1116,7 +1171,7 @@
       const pay = calcPay(s);
       return {
         'Дата': k,
-        'Часов': (s.hours!=null ? s.hours : ''),
+        'Часов': shiftHoursOf(s, wp),
         'Оплата': Math.round(pay*100)/100
       };
     });
@@ -1503,24 +1558,22 @@
         const rt = rangeEnd ? ((rangeEnd<rangeStart) ? rangeStart : rangeEnd) : rangeStart;
         if(k>=rf && k<=rt) cls += ' in-range';
       }
-      let bar = '', amt = '', amtStyle = '';
+      // Под датой — только неоновая точка цвета работы (сумму не показываем: так чище и никто не подсмотрит заработок)
+      let bar = '', mark = '';
       if(s && s.dayOff){
         cls += ' dayoff';
-        amt = 'вых';
-        amtStyle = 'color:var(--off-accent);text-shadow:0 0 5px var(--off-accent)';
+        mark = '<div class="amt mono" style="color:var(--off-accent);text-shadow:0 0 5px var(--off-accent)">вых</div>';
         bar = '<div class="bar" style="background:var(--off-accent);box-shadow:0 0 6px var(--off-accent)"></div>';
       } else if(s && s.workplaceId){
         const wp = getWorkplace(s.workplaceId);
         if(wp){
           bar = '<div class="bar" style="background:'+wp.color+';box-shadow:0 0 6px '+wp.color+'"></div>';
-          const pay = calcPay(s);
-          amt = pay > 0 ? Math.round(pay).toLocaleString('ru-RU') : '';
-          amtStyle = 'color:'+wp.color+';text-shadow:0 0 4px '+wp.color+'99';
+          mark = '<div class="dot" style="background:'+wp.color+';box-shadow:0 0 6px '+wp.color+'"></div>';
         }
       }
       html += '<div class="'+cls+'" onclick="WC.dayTap(\''+k+'\')">';
       html += '  <div class="num">'+d+'</div>';
-      html += '  <div class="amt mono" id="amt-'+k+'" style="'+amtStyle+'">'+amt+'</div>';
+      html += mark;
       html += bar;
       html += '</div>';
     }
@@ -1587,7 +1640,7 @@
         const pay = calcPay(s);
         current.pay += pay;
         current.shifts += 1;
-        current.hours += (s.hours||0);
+        current.hours += shiftHoursOf(s, getWorkplace(s.workplaceId));
       }
       cellIndex++;
       if(cellIndex % 7 === 0 || d === nDays){
@@ -1698,10 +1751,20 @@
     return html;
   }
 
+  // Текст полей оплаты в настройках: введённое число как есть, второе — посчитанное (до копеек)
+  function payFieldText(w, field){
+    if(!(w.rate > 0)) return '';
+    const own = (field === 'shiftPay') === (w.payType === 'daily');
+    if(own) return numText(w.rate);
+    return numText(Math.round((field === 'shiftPay' ? wpShiftPay(w) : wpHourRate(w)) * 100) / 100);
+  }
   function editorPayHtml(s){
-    const wp = getWorkplace(s.workplaceId), isDaily = wp && wp.payType==='daily', pay = calcPay(s);
+    const wp = getWorkplace(s.workplaceId), pay = calcPay(s);
     let html = 'Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
-    if(isDaily && s.hours>0) html += ' <span style="color:var(--muted);">· ≈ '+fmtMoney(pay/s.hours, wp.currency)+'/ч</span>';
+    if(wp){
+      const h = shiftHoursOf(s, wp), full = wpShiftHours(wp);
+      html += ' <span style="color:var(--muted);">· '+numText(h)+' ч × '+fmtMoney(wpHourRate(wp), wp.currency)+'/ч'+(h < full ? ' (смена '+numText(full)+' ч)' : '')+'</span>';
+    }
     return html;
   }
 
@@ -1739,9 +1802,7 @@
     }
 
     if(s.workplaceId){
-      const wp = getWorkplace(s.workplaceId);
-      const isDaily = wp && wp.payType==='daily';
-      html += '  <div class="hours-row"><label>'+(isDaily?'Часов (учёт, на оплату не влияет)':'Часов')+'</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
+      html += '  <div class="hours-row"><label>Часов</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" placeholder="'+numText(wpShiftHours(getWorkplace(s.workplaceId)))+'" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
       html += '  <div class="preview-pay" id="editorPay">'+editorPayHtml(s)+'</div>';
     }
 
@@ -1830,9 +1891,7 @@
     html += '<div class="choice'+(patternForm.fillMode==='week'?' active':'')+'" style="color:'+pc+(patternForm.fillMode==='week'?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternFillMode(\'week\')">До конца недели (по вс.)</div>';
     html += '  </div></div>';
 
-    const wp = getWorkplace(patternForm.workplaceId);
-    const isDaily = wp && wp.payType==='daily';
-    html += '  <div class="field"><label>Часов за смену'+(isDaily?' (учёт, не влияет на оплату)':'')+'</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="patternHours" value="'+numText(patternForm.hours)+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    html += '  <div class="field"><label>Часов за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="patternHours" value="'+numText(patternForm.hours)+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
     html += '    <div class="choice active" style="flex:none;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
@@ -1866,14 +1925,15 @@
       }
       html += '    </div>';
       html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.editWp('+idx+',\'name\',this.value)"></div>';
-      html += '    <div class="field"><label>Тип оплаты</label><div class="choice-row">';
-      html += '      <div class="choice'+(w.payType==='hourly'?' active':'')+'" style="color:'+w.color+(w.payType==='hourly'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'hourly\')">Почасовая</div>';
-      html += '      <div class="choice'+(w.payType==='daily'?' active':'')+'" style="color:'+w.color+(w.payType==='daily'?';background:'+w.color+'22;box-shadow:0 0 10px '+w.color:'')+'" onclick="WC.updateWp('+idx+',\'payType\',\'daily\')">Фиксированная</div>';
-      html += '    </div></div>';
       html += '    <div class="rate-row">';
-      html += '      <div class="field"><label>Ставка ('+(w.payType==='hourly'?'в час':'за смену')+')</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpRateInput'+idx+'" value="'+numText(w.rate)+'" oninput="WC.editWp('+idx+',\'rate\',this.value)"></div>';
+      html += '      <div class="field"><label>Оплата за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpShiftPayInput'+idx+'" value="'+payFieldText(w, 'shiftPay')+'" oninput="WC.editWp('+idx+',\'shiftPay\',this.value)"></div>';
+      html += '      <div class="field"><label>Оплата за час</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpRateInput'+idx+'" value="'+payFieldText(w, 'hourRate')+'" oninput="WC.editWp('+idx+',\'hourRate\',this.value)"></div>';
+      html += '    </div>';
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Часов в смене</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpShiftHoursInput'+idx+'" value="'+numText(wpShiftHours(w))+'" oninput="WC.editWp('+idx+',\'shiftHours\',this.value)"></div>';
       html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.editWp('+idx+',\'currency\',this.value)"></div>';
       html += '    </div>';
+      html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 8px;">Впиши оплату за смену или за час — второе посчитается само. Ушёл раньше — поставь в календаре меньше часов, и оплата пересчитается.</div>';
       html += '    <div class="field"><label>Цвет</label><div class="color-swatches">';
       SWATCH_COLORS.forEach(c=>{
         const active = w.color===c;
@@ -4300,6 +4360,7 @@
         patternForm.startDate = selectedDate || dateKey(view.year, view.month, 1);
         const pw = getWorkplace(patternForm.workplaceId);
         if(!pw || pw.archived){ const aw = activeWorkplaces()[0]; if(aw) patternForm.workplaceId = aw.id; }
+        if(!patternHoursTouched){ const cw = getWorkplace(patternForm.workplaceId); if(cw) patternForm.hours = wpShiftHours(cw); }
       }
       currentTab = tab;
       if(tab !== 'calendar'){ rangeMode=false; rangeStart=null; rangeEnd=null; }
@@ -4381,7 +4442,7 @@
         return {
           'Дата': k,
           'Место': wp ? wp.name : '—',
-          'Часов': (s.hours!=null ? s.hours : ''),
+          'Часов': wp ? shiftHoursOf(s, wp) : (s.hours!=null ? s.hours : ''),
           'Оплата': Math.round(pay*100)/100
         };
       });
@@ -4395,6 +4456,7 @@
         if(String(value).trim() === '') patternForm[key] = '';
         else if(isFinite(n)) patternForm[key] = n;
         else return;
+        if(key === 'hours') patternHoursTouched = true;
         if(key !== 'hours'){
           const box = document.getElementById('patternPresets');
           const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
@@ -4402,6 +4464,7 @@
         }
       } else {
         patternForm[key] = value;
+        if(key === 'workplaceId'){ const cw = getWorkplace(value); if(cw){ patternForm.hours = wpShiftHours(cw); patternHoursTouched = false; } }
         render();
       }
     },
@@ -4473,7 +4536,8 @@
     pickWorkplace(wpId){
       if(!selectedDate) return;
       const existing = state.shifts[selectedDate] || {};
-      state.shifts[selectedDate] = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : undefined, dayOff:false };
+      const pw = getWorkplace(wpId);
+      state.shifts[selectedDate] = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : (pw ? wpShiftHours(pw) : undefined), dayOff:false };
       editorPickerOpen = false;
       saveState(); render();
     },
@@ -4512,8 +4576,6 @@
       else return;                      // промежуточный ввод («7,») — ждём следующую цифру
       const pay = document.getElementById('editorPay');
       if(pay) pay.innerHTML = editorPayHtml(s);
-      const amt = document.getElementById('amt-'+selectedDate);
-      if(amt){ const p = calcPay(s); amt.textContent = p > 0 ? Math.round(p).toLocaleString('ru-RU') : ''; }
       scheduleSave();
     },
     clearDay(){
@@ -4525,7 +4587,23 @@
     editWp(idx, key, value){
       const w = state.workplaces[idx];
       if(!w) return;
-      if(key==='rate'){ const n = parseNum(value); if(String(value).trim()==='') w.rate = 0; else if(isFinite(n)) w.rate = n; else return; }
+      if(key==='rate' || key==='shiftPay' || key==='hourRate'){
+        const n = parseNum(value);
+        let v;
+        if(String(value).trim()==='') v = 0; else if(isFinite(n)) v = n; else return;
+        if(key==='shiftPay') w.payType = 'daily';
+        else if(key==='hourRate') w.payType = 'hourly';
+        w.rate = v;
+        // второе поле считаем сразу, не перерисовывая экран — поле, в котором печатают, не трогаем
+        const other = document.getElementById((w.payType==='daily' ? 'wpRateInput' : 'wpShiftPayInput')+idx);
+        if(other && other !== document.activeElement) other.value = payFieldText(w, w.payType==='daily' ? 'hourRate' : 'shiftPay');
+      } else if(key==='shiftHours'){
+        const n = parseNum(value);
+        if(!(isFinite(n) && n > 0 && n <= 24)) return;   // пусто/0 — ждём, пока допечатают
+        w.shiftHours = n;
+        const other = document.getElementById((w.payType==='daily' ? 'wpRateInput' : 'wpShiftPayInput')+idx);
+        if(other) other.value = payFieldText(w, w.payType==='daily' ? 'hourRate' : 'shiftPay');
+      }
       else w[key] = value;
       scheduleSave();
     },
@@ -4585,7 +4663,8 @@
         color: SWATCH_COLORS[idx % SWATCH_COLORS.length],
         payType: 'hourly',
         rate: 0,
-        currency: '₽'
+        currency: '₽',
+        shiftHours: 8
       });
       saveState(); render();
     },
