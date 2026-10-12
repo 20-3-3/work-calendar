@@ -877,17 +877,15 @@
   // Schema version of the persisted data. Bump this and add a step in migrateState()
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
-  const CURRENT_VERSION = 4;
-  const APP_BUILD = 'iOS · 2026-10-03 · v18';
+  const CURRENT_VERSION = 5;
+  const APP_BUILD = 'iOS · 2026-10-12 · v19';
 
   let state = {
     version: CURRENT_VERSION,
-    workplaces: [
-      { id:'w1', name:'Кофейня', color:'#FF9500', payType:'hourly', rate:300, currency:'₽', shiftHours:8 },
-      { id:'w2', name:'Кинотеатр', color:'#00E5FF', payType:'hourly', rate:300, currency:'₽', shiftHours:8 }
-    ],
+    workplaces: [],          // новый человек начинает с пустого списка и сам добавляет свои работы
     shifts: {},
-    payments: []
+    payments: [],
+    bonuses: {}              // премия «за месяц»: { 'ГГГГ-ММ': { id работы: { percent, sales, fix } } }
   };
 
   let currentTab = 'calendar'; // 'calendar' | 'reports' | 'settings'
@@ -958,12 +956,26 @@
     const wp = getWorkplace(shift.workplaceId);
     if(!wp) return 0;
     const h = shiftHoursOf(shift, wp);
+    let pay;
     if(wp.payType === 'daily'){
       const full = wpShiftHours(wp);
-      return h === full ? wp.rate : wp.rate * h / full;
-    }
-    return h * wp.rate;
+      pay = h === full ? wp.rate : wp.rate * h / full;
+    } else pay = h * wp.rate;
+    return pay + shiftBonusOf(shift, wp);
   }
+  // Процент с продаж за смену: продажи дня × процент работы (только если у работы режим «с каждой смены»)
+  function shiftBonusOf(shift, wp){
+    if(!wp || wp.salesMode !== 'shift' || !(shift.sales > 0) || !(wp.salesPercent > 0)) return 0;
+    return shift.sales * wp.salesPercent / 100;
+  }
+  // Премия за месяц: (продажи − фикс) × процент; продажи меньше фикса — премии нет
+  function monthBonusOf(wp, e){
+    if(!wp || !e) return 0;
+    const pct = e.percent > 0 ? e.percent : 0, sales = e.sales > 0 ? e.sales : 0;
+    const fix = (wp.salesFix && e.fix > 0) ? e.fix : 0;
+    return Math.max(0, sales - fix) * pct / 100;
+  }
+  function monthKeyOf(y, m){ return y+'-'+pad(m+1); }
   // Самая частая длина смены у работы — по уже записанным сменам (для перехода со старых версий)
   function typicalShiftHours(shifts, wpId){
     const cnt = {};
@@ -985,7 +997,7 @@
   function computeRangeStats(from, to){
     let f = from, t = to;
     if(f && t && t < f){ const tmp=f; f=t; t=tmp; }
-    let totalPay=0, totalHours=0, totalShifts=0, totalOff=0;
+    let totalPay=0, totalHours=0, totalShifts=0, totalOff=0, totalBonus=0;
     const wpStats = {};
     state.workplaces.forEach(w=> wpStats[w.id]={pay:0,hours:0,days:0});
     Object.keys(state.shifts).forEach(k=>{
@@ -999,7 +1011,9 @@
         totalPay += pay;
         totalShifts++;
         if(wpStats[s.workplaceId]){
-          const h = shiftHoursOf(s, getWorkplace(s.workplaceId));
+          const swp = getWorkplace(s.workplaceId);
+          const h = shiftHoursOf(s, swp);
+          totalBonus += shiftBonusOf(s, swp);
           wpStats[s.workplaceId].pay += pay;
           wpStats[s.workplaceId].days++;
           wpStats[s.workplaceId].hours += h;
@@ -1007,7 +1021,21 @@
         }
       }
     });
-    return { totalPay, totalHours, totalShifts, totalOff, wpStats, from:f, to:t };
+    // Премия за месяц относится к последнему дню месяца: попадает в период, если в него входит этот день
+    Object.keys(state.bonuses || {}).forEach(function(mk){
+      const yy = +mk.slice(0,4), mm = +mk.slice(5,7) - 1;
+      const last = mk + '-' + pad(daysInMonth(yy, mm));
+      if(f && last < f) return;
+      if(t && last > t) return;
+      const row = state.bonuses[mk] || {};
+      Object.keys(row).forEach(function(wpId){
+        const b = monthBonusOf(getWorkplace(wpId), row[wpId]);
+        if(!(b > 0)) return;
+        totalPay += b; totalBonus += b;
+        if(wpStats[wpId]) wpStats[wpId].pay += b;
+      });
+    });
+    return { totalPay, totalHours, totalShifts, totalOff, totalBonus, wpStats, from:f, to:t };
   }
 
   function fmtDateShort(k){
@@ -1069,6 +1097,12 @@
       });
       v = 4;
     }
+    if(v < 5){
+      // v4 -> v5: процент с продаж. У работы — salesMode ('none' | 'shift' | 'month'), salesPercent, salesFix;
+      // у смены — sales (продажи за день); премия за месяц — в parsed.bonuses. Старые данные не меняются.
+      if(!parsed.bonuses || typeof parsed.bonuses !== 'object' || Array.isArray(parsed.bonuses)) parsed.bonuses = {};
+      v = 5;
+    }
     parsed.version = v;
     return parsed;
   }
@@ -1084,15 +1118,16 @@
       rate: (w && typeof w.rate==='number') ? w.rate : (parseFloat(w && w.rate) || 0),
       currency: (w && w.currency) ? w.currency : '₽',
       archived: !!(w && w.archived),
-      shiftHours: (w && typeof w.shiftHours==='number' && w.shiftHours > 0) ? w.shiftHours : (typicalShiftHours(state.shifts, w && w.id ? w.id : ('w'+(i+1))) || 8)
+      shiftHours: (w && typeof w.shiftHours==='number' && w.shiftHours > 0) ? w.shiftHours : (typicalShiftHours(state.shifts, w && w.id ? w.id : ('w'+(i+1))) || 8),
+      salesMode: (w && (w.salesMode==='shift' || w.salesMode==='month')) ? w.salesMode : 'none',
+      salesPercent: (w && typeof w.salesPercent==='number' && w.salesPercent >= 0) ? w.salesPercent : 0,
+      salesFix: !!(w && w.salesFix)
     }));
-    if(!list.some(w=>!w.archived)){
-      list.push({ id:'w1', name:'Работа 1', color:SWATCH_COLORS[0], payType:'hourly', rate:0, currency:'₽', shiftHours:8 });
-    }
-    state.workplaces = list;
+    state.workplaces = list;   // список может быть пустым — тогда приложение предложит добавить работу
     state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
     state.payments = Array.isArray(state.payments) ? state.payments : [];
     state.profile = (state.profile && typeof state.profile === 'object') ? state.profile : {};
+    state.bonuses = (state.bonuses && typeof state.bonuses === 'object' && !Array.isArray(state.bonuses)) ? state.bonuses : {};
   }
 
   function applyLoaded(raw){
@@ -1102,6 +1137,7 @@
     if(parsed.shifts) state.shifts = parsed.shifts;
     state.payments = Array.isArray(parsed.payments) ? parsed.payments : [];
     if(parsed.profile && typeof parsed.profile === 'object') state.profile = parsed.profile;
+    if(parsed.bonuses && typeof parsed.bonuses === 'object') state.bonuses = parsed.bonuses;
     state.version = parsed.version;
     normalizeState();
   }
@@ -1198,15 +1234,40 @@
       if(to && k > to) return false;
       return true;
     }).sort();
-    return keys.map(k=>{
+    const rows = keys.map(k=>{
       const s = state.shifts[k];
       const pay = calcPay(s);
-      return {
+      const r = {
         'Дата': k,
         'Часов': shiftHoursOf(s, wp),
         'Оплата': Math.round(pay*100)/100
       };
+      if(wp && wp.salesMode === 'shift') r['Продажи'] = s.sales > 0 ? s.sales : '';
+      return r;
     });
+    return rows.concat(monthBonusRows(wpId, from, to, false)).sort(function(a,b){ return a['Дата'] < b['Дата'] ? -1 : (a['Дата'] > b['Дата'] ? 1 : 0); });
+  }
+  // Строки «Премия за месяц» для Excel (дата — последний день месяца)
+  function monthBonusRows(wpId, from, to, withPlace){
+    const out = [];
+    const wp = getWorkplace(wpId);
+    Object.keys(state.bonuses || {}).sort().forEach(function(mk){
+      const e = state.bonuses[mk] && state.bonuses[mk][wpId];
+      const b = monthBonusOf(wp, e);
+      if(!(b > 0)) return;
+      const yy = +mk.slice(0,4), mm = +mk.slice(5,7) - 1;
+      const last = mk + '-' + pad(daysInMonth(yy, mm));
+      if(from && last < from) return;
+      if(to && last > to) return;
+      const r = { 'Дата': last };
+      if(withPlace) r['Место'] = wp ? wp.name : '—';
+      r['Часов'] = '';
+      r['Оплата'] = Math.round(b*100)/100;
+      r['Продажи'] = e.sales;
+      r['Примечание'] = 'Премия за '+MONTHS[mm].toLowerCase()+' '+yy+': '+numText(e.percent)+'%'+(wp.salesFix && e.fix > 0 ? ' сверх фикса '+fmtMoney(e.fix, wp.currency) : '');
+      out.push(r);
+    });
+    return out;
   }
 
   // Модуль Excel (~900 КБ) грузим только когда он нужен, а не при запуске: синхронный <script>
@@ -1545,6 +1606,7 @@
     }
 
     html += renderPaymentForm();
+    html += renderNewWpForm();
     html += renderDatePicker();
     html += renderUpdateToast();
 
@@ -1573,6 +1635,7 @@
     html += '<div style="display:flex;justify-content:center;margin-bottom:14px;">';
     html += '  <div class="today-link" style="'+(rangeMode?'color:var(--amber);border-color:var(--amber);':'')+'" onclick="WC.toggleRangeMode()">'+(rangeMode?'Выйти из режима периода':'Выбрать период на календаре')+'</div>';
     html += '</div>';
+    if(!activeWorkplaces().length) html += emptyWorkHtml('Добавь своё место работы: название, оплату за смену или за час и, если есть, процент с продаж. После этого смены можно отмечать прямо в календаре.');
 
 
     html += '<div class="weekdays cal-weekdays" style="'+weekdayVars(m)+'">' + WEEKDAYS.map(w=>'<div>'+w+'</div>').join('') + '</div>';
@@ -1640,8 +1703,9 @@
     html += '<div class="section" style="margin-top:0;">';
     html += '  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;"><span>Итого за месяц</span><span class="clear-btn" onclick="WC.clearMonth()">Очистить</span></div>';
     html += '  <div class="summary-card">';
-    html += '    <div class="total-pay mono">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</div>';
+    html += '    <div class="total-pay mono" id="msTotal">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</div>';
     html += '    <div class="total-sub">'+ms.totalShifts+' смен · '+ms.totalHours+' ч · '+ms.totalOff+' вых.</div>';
+    html += '    <div class="total-sub" id="msBonusLine" style="'+(ms.totalBonus>0?'':'display:none;')+'">в том числе премия: <span class="mono" id="msBonus" style="color:var(--text);">'+fmtMoney(ms.totalBonus, state.workplaces[0]?.currency)+'</span></div>';
     state.workplaces.forEach(w=>{
       const t = ms.wpStats[w.id] || {pay:0,hours:0,days:0};
       if(!showInStats(w,t)) return;
@@ -1650,13 +1714,14 @@
       html += '      <div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div>';
       html += '      <div class="wp-info">';
       html += '        <div class="wp-name">'+esc(w.name)+(w.archived?' <span style="color:var(--muted)">(бывшее)</span>':'')+' <span style="color:var(--muted)">· '+t.days+' смен · '+t.hours+' ч</span></div>';
-      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
+      html += '        <div class="wp-bar-track"><div class="wp-bar-fill" id="msBar-'+w.id+'" style="width:'+pct+'%;background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div></div>';
       html += '      </div>';
-      html += '      <div class="wp-pay">'+fmtMoney(t.pay, w.currency)+'</div>';
+      html += '      <div class="wp-pay" id="msPay-'+w.id+'">'+fmtMoney(t.pay, w.currency)+'</div>';
       html += '    </div>';
     });
     html += '  </div>';
     html += '</div>';
+    html += renderBonusSection(y, m);
 
     // weekly breakdown (grouped by calendar rows for this month)
     const weeks = [];
@@ -1698,9 +1763,9 @@
     html += '<div class="section">';
     html += '  <div class="section-title">Выплаты за месяц</div>';
     html += '  <div class="summary-card">';
-    html += '    <div class="total-sub">Начислено: <span class="mono" style="color:var(--text);">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</span></div>';
+    html += '    <div class="total-sub">Начислено: <span class="mono" id="msAccrued" style="color:var(--text);">'+fmtMoney(ms.totalPay, state.workplaces[0]?.currency)+'</span></div>';
     html += '    <div class="total-sub">Выплачено: <span class="mono" style="color:var(--teal);">'+fmtMoney(paidMonth, state.workplaces[0]?.currency)+'</span></div>';
-    html += '    <div class="total-sub">'+(diffMonth>=0?'Осталось получить: ':'Переплачено: ')+'<span class="mono" style="color:'+(diffMonth>=0?'var(--amber)':'var(--danger)')+';">'+fmtMoney(Math.abs(diffMonth), state.workplaces[0]?.currency)+'</span></div>';
+    html += '    <div class="total-sub"><span id="msDiffLabel">'+(diffMonth>=0?'Осталось получить: ':'Переплачено: ')+'</span><span class="mono" id="msDiff" style="color:'+(diffMonth>=0?'var(--amber)':'var(--danger)')+';">'+fmtMoney(Math.abs(diffMonth), state.workplaces[0]?.currency)+'</span></div>';
     html += '  </div>';
     if(monthPayments.length){
       html += '  <div class="week-list" style="margin-top:10px;">';
@@ -1766,12 +1831,102 @@
     return html;
   }
 
+  // ---- Премиальная часть (процент с продаж) ----
+  // Процент и фикс прошлого месяца подставляются сами — каждый месяц нужно вписать только продажи
+  function bonusDefaults(wpId, mk){
+    let best = null;
+    Object.keys(state.bonuses).forEach(function(k){
+      const e = state.bonuses[k] && state.bonuses[k][wpId];
+      if(k < mk && e && (e.percent > 0 || e.fix > 0) && (!best || k > best)) best = k;
+    });
+    const e = best ? state.bonuses[best][wpId] : null;
+    return { percent: e && e.percent > 0 ? e.percent : '', fix: e && e.fix > 0 ? e.fix : '', sales: '' };
+  }
+  function bonusResultHtml(w, e){
+    const muted = function(t){ return '<span style="color:var(--muted);">'+t+'</span>'; };
+    if(!e || !(e.sales > 0)) return muted('Впиши продажи за месяц — премия прибавится к итогу месяца.');
+    if(!(e.percent > 0)) return muted('Впиши процент с продаж.');
+    const fix = (w.salesFix && e.fix > 0) ? e.fix : 0;
+    if(w.salesFix && e.sales <= fix) return muted('Продажи не больше фикса — премии в этом месяце нет.');
+    const b = monthBonusOf(w, e);
+    return 'Премия: <span class="mono" style="color:var(--text);font-weight:600;font-size:16px;">'+fmtMoney(b, w.currency)+'</span> '+
+      muted('· '+(fix > 0 ? '('+fmtNum(e.sales)+' − '+fmtNum(fix)+')' : fmtNum(e.sales))+' × '+numText(e.percent)+'%');
+  }
+  function renderBonusSection(y, m){
+    const mk = monthKeyOf(y, m);
+    const row = state.bonuses[mk] || {};
+    const monthWps = state.workplaces.filter(function(w){ return (w.salesMode === 'month' && !w.archived) || (row[w.id] && monthBonusOf(w, row[w.id]) > 0); });
+    // работы с процентом «с каждой смены»: сколько продано и сколько премии уже вошло в оплату смен
+    const from = dateKey(y, m, 1), to = dateKey(y, m, daysInMonth(y, m));
+    const shiftSum = {};
+    Object.keys(state.shifts).forEach(function(k){
+      if(k < from || k > to) return;
+      const s = state.shifts[k];
+      if(!s || !s.workplaceId || !(s.sales > 0)) return;
+      const wp = getWorkplace(s.workplaceId);
+      if(!wp || wp.salesMode !== 'shift') return;
+      const o = shiftSum[wp.id] || (shiftSum[wp.id] = { sales:0, bonus:0, days:0 });
+      o.sales += s.sales; o.bonus += shiftBonusOf(s, wp); o.days++;
+    });
+    const shiftWps = state.workplaces.filter(function(w){ return shiftSum[w.id]; });
+    if(!monthWps.length && !shiftWps.length) return '';
+    let html = '<div class="section">';
+    html += '  <div class="section-title">Премиальная часть</div>';
+    monthWps.forEach(function(w){
+      const e = row[w.id], d = e ? { percent: e.percent, sales: e.sales, fix: e.fix } : bonusDefaults(w.id, mk);
+      const ed = function(key){ return 'WC.editBonus(\''+w.id+'\',\''+key+'\',this.value)'; };
+      html += '  <div class="summary-card" style="--focus:'+w.color+';margin-bottom:10px;">';
+      html += '    <div class="wp-name" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></span>'+esc(w.name)+'</div>';
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Процент с продаж, %</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="Например: 10" id="bonusPct-'+w.id+'" value="'+numText(d.percent)+'" oninput="'+ed('percent')+'"></div>';
+      html += '      <div class="field"><label>Продажи за месяц</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="bonusSales-'+w.id+'" value="'+numText(d.sales)+'" oninput="'+ed('sales')+'"></div>';
+      html += '    </div>';
+      if(w.salesFix){
+        html += '    <div class="rate-row">';
+        html += '      <div class="field"><label>Фикс</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="bonusFix-'+w.id+'" value="'+numText(d.fix)+'" oninput="'+ed('fix')+'"></div>';
+        html += '    </div>';
+      }
+      html += '    <div class="preview-pay" id="bonusRes-'+w.id+'" style="margin-top:2px;">'+bonusResultHtml(w, e)+'</div>';
+      html += '  </div>';
+    });
+    if(shiftWps.length){
+      html += '  <div class="summary-card" style="margin-bottom:10px;">';
+      shiftWps.forEach(function(w, i){
+        const o = shiftSum[w.id];
+        html += '    <div class="wp-row" style="'+(i?'':'margin-top:0;')+'"><div class="wp-dot" style="background:'+w.color+';box-shadow:0 0 6px '+w.color+'"></div><div class="wp-info"><div class="wp-name">'+esc(w.name)+' <span style="color:var(--muted)">· продажи '+fmtMoney(o.sales, w.currency)+' · '+numText(w.salesPercent)+'% со смены</span></div></div><div class="wp-pay">'+fmtMoney(o.bonus, w.currency)+'</div></div>';
+      });
+      html += '    <div class="total-sub" style="margin-top:10px;">Процент со смен уже входит в оплату этих смен.</div>';
+      html += '  </div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  // Пока вписывают продажи — обновляем итог месяца на месте, не перерисовывая экран (клавиатура не прыгает)
+  function refreshMonthSummary(){
+    const y = view.year, m = view.month;
+    const from = dateKey(y, m, 1), to = dateKey(y, m, daysInMonth(y, m));
+    const ms = computeRangeStats(from, to), cur = state.workplaces[0]?.currency;
+    const set = function(id, txt){ const el = document.getElementById(id); if(el) el.textContent = txt; };
+    set('msTotal', fmtMoney(ms.totalPay, cur));
+    set('msBonus', fmtMoney(ms.totalBonus, cur));
+    const bl = document.getElementById('msBonusLine'); if(bl) bl.style.display = ms.totalBonus > 0 ? '' : 'none';
+    state.workplaces.forEach(function(w){
+      const t = ms.wpStats[w.id]; if(!t) return;
+      set('msPay-'+w.id, fmtMoney(t.pay, w.currency));
+      const bar = document.getElementById('msBar-'+w.id); if(bar) bar.style.width = (ms.totalPay > 0 ? Math.round(t.pay/ms.totalPay*100) : 0)+'%';
+    });
+    const diff = ms.totalPay - paymentsTotal(getPaymentsInRange(from, to));
+    set('msAccrued', fmtMoney(ms.totalPay, cur));
+    set('msDiffLabel', diff >= 0 ? 'Осталось получить: ' : 'Переплачено: ');
+    const d = document.getElementById('msDiff'); if(d){ d.textContent = fmtMoney(Math.abs(diff), cur); d.style.color = diff >= 0 ? 'var(--amber)' : 'var(--danger)'; }
+  }
+
   function renderPatternTab(){
     let html = '<div class="top">';
     html += '  <div><div class="brand">Табель</div><div class="month-title" style="color:var(--green);text-shadow:0 0 14px #39FF1466;">График</div></div>';
     html += '</div>';
     html += renderPatternPanel();
-    html += renderImportCard();
+    if(activeWorkplaces().length) html += renderImportCard();   // без работ импорт некуда записать — не показываем
     return html;
   }
 
@@ -1781,6 +1936,89 @@
     html += '</div>';
     html += renderSettings();
     return html;
+  }
+
+  const SALES_MODES = [['none','Нет'],['shift','Со смены'],['month','За месяц']];
+  function wpChoiceHtml(label, active, color, onclick){
+    return '<div class="choice'+(active?' active':'')+'" style="flex:1 1 0;min-width:0;padding:9px 4px;color:'+color+(active?';background:'+color+'22;box-shadow:0 0 10px '+color:'')+'" onclick="'+onclick+'">'+label+'</div>';
+  }
+  // Поля оплаты работы. ref — индекс работы в списке или 'new' для окна «Новое место работы».
+  // Процент с продаж — между оплатой и «Часов в смене»; лишние поля видны, только если процент есть.
+  function wpPayFieldsHtml(w, ref){
+    const r = ref === 'new' ? "'new'" : ref;
+    const ed = function(key){ return 'WC.editWp('+r+',\''+key+'\',this.value)'; };
+    const up = function(key, val){ return 'WC.updateWp('+r+',\''+key+'\','+val+')'; };
+    const mode = w.salesMode || 'none';
+    let html = '';
+    html += '    <div class="rate-row">';
+    html += '      <div class="field"><label>Оплата за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpShiftPayInput'+ref+'" value="'+payFieldText(w, 'shiftPay')+'" oninput="'+ed('shiftPay')+'"></div>';
+    html += '      <div class="field"><label>Оплата за час</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpRateInput'+ref+'" value="'+payFieldText(w, 'hourRate')+'" oninput="'+ed('hourRate')+'"></div>';
+    html += '    </div>';
+    html += '    <div class="field"><label>Процент с продаж</label><div class="choice-row" style="margin-bottom:6px;">';
+    SALES_MODES.forEach(function(m){ html += wpChoiceHtml(m[1], mode===m[0], w.color, up('salesMode', "\'"+m[0]+"\'")); });
+    html += '    </div></div>';
+    if(mode === 'shift'){
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Процент, %</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="Например: 2" id="wpPctInput'+ref+'" value="'+(w.salesPercent > 0 ? numText(w.salesPercent) : '')+'" oninput="'+ed('salesPercent')+'"></div>';
+      html += '    </div>';
+      html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 10px;">Продажи за день вписываются в календаре — в окне дня, после часов. Процент прибавится к оплате смены.</div>';
+    } else if(mode === 'month'){
+      html += '    <div class="field"><label>Фикс</label><div class="choice-row" style="margin-bottom:6px;">'+wpChoiceHtml('Нет', !w.salesFix, w.color, up('salesFix','false'))+wpChoiceHtml('Есть', !!w.salesFix, w.color, up('salesFix','true'))+'</div></div>';
+      html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 10px;">Процент'+(w.salesFix?', фикс':'')+' и продажи за месяц вписываются в «Отчётах» — блок «Премиальная часть». '+(w.salesFix?'Премия = (продажи − фикс) × процент.':'Премия = продажи × процент.')+'</div>';
+    }
+    html += '    <div class="rate-row">';
+    html += '      <div class="field"><label>Часов в смене</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpShiftHoursInput'+ref+'" value="'+numText(wpShiftHours(w))+'" oninput="'+ed('shiftHours')+'"></div>';
+    html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpCurrencyInput'+ref+'" value="'+esc(w.currency||'₽')+'" oninput="'+ed('currency')+'"></div>';
+    html += '    </div>';
+    html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 8px;">Впиши оплату за смену или за час — второе посчитается само. Ушёл раньше — поставь в календаре меньше часов, и оплата пересчитается.</div>';
+    return html;
+  }
+  function wpColorHtml(w, ref){
+    const r = ref === 'new' ? "'new'" : ref;
+    let html = '    <div class="field"><label>Цвет</label><div class="color-swatches">';
+    SWATCH_COLORS.forEach(c=>{
+      const active = w.color===c;
+      html += '<div class="swatch'+(active?' active':'')+'" style="background:'+c+(active?';box-shadow:0 0 8px '+c:'')+'" onclick="WC.updateWp('+r+',\'color\',\''+c+'\')"></div>';
+    });
+    html += '    </div></div>';
+    return html;
+  }
+  // Окно «Новое место работы»: сразу спрашивает оплату и процент с продаж
+  let newWpForm = null;
+  function renderNewWpForm(){
+    if(!newWpForm) return '';
+    const w = newWpForm;
+    let html = '<div class="confirm-overlay" onclick="if(event.target===this) WC.cancelNewWp()">';
+    html += '  <div class="confirm-sheet" style="--focus:'+w.color+';border-color:'+hexA(w.color,0.45)+';">';
+    html += '    <div class="confirm-msg" style="font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:50%;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>Новое место работы</div>';
+    html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpNameInputnew" placeholder="Например: Магазин" value="'+esc(w.name)+'" oninput="WC.editWp(\'new\',\'name\',this.value)"></div>';
+    html += wpPayFieldsHtml(w, 'new');
+    html += wpColorHtml(w, 'new');
+    html += '    <div class="confirm-actions" style="margin-top:14px;">';
+    html += '      <div class="confirm-btn cancel" onclick="WC.cancelNewWp()">Отмена</div>';
+    html += '      <div class="confirm-btn ok" onclick="WC.saveNewWp()">Добавить</div>';
+    html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+  // Удалить работу навсегда: её смены и премии, выплаты остаются в журнале без привязки
+  function eraseWorkplace(id){
+    Object.keys(state.shifts).forEach(function(k){ const s = state.shifts[k]; if(s && s.workplaceId === id) delete state.shifts[k]; });
+    Object.keys(state.bonuses).forEach(function(mk){
+      const row = state.bonuses[mk];
+      if(row && row[id]){ delete row[id]; if(!Object.keys(row).length) delete state.bonuses[mk]; }
+    });
+    (state.payments || []).forEach(function(p){ if(p.workplaceId === id) p.workplaceId = ''; });
+    state.workplaces = state.workplaces.filter(function(w){ return w.id !== id; });
+    if(patternForm.workplaceId === id){ const a = activeWorkplaces()[0]; patternForm.workplaceId = a ? a.id : ''; }
+    editorPickerOpen = false;
+  }
+  function shiftsWord(n){
+    const a = n % 10, b = n % 100;
+    if(a === 1 && b !== 11) return 'смена';
+    if(a >= 2 && a <= 4 && (b < 12 || b > 14)) return 'смены';
+    return 'смен';
   }
 
   // Текст полей оплаты в настройках: введённое число как есть, второе — посчитанное (до копеек)
@@ -1794,8 +2032,10 @@
     const wp = getWorkplace(s.workplaceId), pay = calcPay(s);
     let html = 'Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
     if(wp){
-      const h = shiftHoursOf(s, wp), full = wpShiftHours(wp);
-      html += ' <span style="color:var(--muted);">· '+numText(h)+' ч × '+fmtMoney(wpHourRate(wp), wp.currency)+'/ч'+(h < full ? ' (смена '+numText(full)+' ч)' : '')+'</span>';
+      const h = shiftHoursOf(s, wp), full = wpShiftHours(wp), b = shiftBonusOf(s, wp);
+      html += ' <span style="color:var(--muted);">· '+numText(h)+' ч × '+fmtMoney(wpHourRate(wp), wp.currency)+'/ч'+(h < full ? ' (смена '+numText(full)+' ч)' : '');
+      if(b > 0) html += ' + '+numText(wp.salesPercent)+'% с продаж '+fmtMoney(b, wp.currency);
+      html += '</span>';
     }
     return html;
   }
@@ -1817,6 +2057,7 @@
 
     if(showPicker){
       html += '  <div class="choice-row">';
+      if(!activeWorkplaces().length) html += '<div class="choice" style="color:var(--amber);" onclick="WC.addWorkplace()">+ Место работы</div>';
       activeWorkplaces().forEach(w=>{
         const active = s.workplaceId === w.id;
         html += '<div class="choice'+(active?' active':'')+'" style="color:'+w.color+(active?(';background:'+w.color+'22;box-shadow:0 0 10px '+w.color):'')+'" onclick="WC.pickWorkplace(\''+w.id+'\')">'+esc(w.name)+'</div>';
@@ -1834,7 +2075,9 @@
     }
 
     if(s.workplaceId){
-      html += '  <div class="hours-row"><label>Часов</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" placeholder="'+numText(wpShiftHours(getWorkplace(s.workplaceId)))+'" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
+      const ewp = getWorkplace(s.workplaceId), withSales = !!(ewp && ewp.salesMode === 'shift');
+      html += '  <div class="hours-row"><label'+(withSales?' style="min-width:64px;"':'')+'>Часов</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" placeholder="'+numText(wpShiftHours(ewp))+'" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
+      if(withSales) html += '  <div class="hours-row"><label style="min-width:64px;">Продажи</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="salesInput" placeholder="0" style="width:130px;" value="'+numText(s.sales)+'" oninput="WC.setSales(this.value)"></div>';
       html += '  <div class="preview-pay" id="editorPay">'+editorPayHtml(s)+'</div>';
     }
 
@@ -1897,7 +2140,17 @@
     return html;
   }
 
+  // Карточка «добавь место работы» — для первого запуска и пустых экранов
+  function emptyWorkHtml(text){
+    let html = '<div class="editor open" style="border-left-color:var(--amber);margin:0 0 14px;">';
+    html += '  <div class="edate">Начнём с места работы</div>';
+    html += '  <div style="font-size:13px;line-height:1.45;color:var(--muted);margin-bottom:12px;">'+text+'</div>';
+    html += '  <div class="choice active" style="color:var(--amber);background:#FF950022;box-shadow:0 0 10px var(--amber);" onclick="WC.addWorkplace()">+ Добавить место работы</div>';
+    html += '</div>';
+    return html;
+  }
   function renderPatternPanel(){
+    if(!activeWorkplaces().length) return emptyWorkHtml('Чтобы заполнить график по шаблону или загрузить его с фото, сначала добавь место работы.');
     const pc = (getWorkplace(patternForm.workplaceId)||{}).color || '#FF9500';
     let html = '<div class="settings open" style="margin-top:0;--focus:'+pc+';border-color:'+hexA(pc,0.35)+';">';
     html += '  <div class="section-title">Заполнить по шаблону</div>';
@@ -1952,28 +2205,14 @@
       html += '  <div class="wp-edit" style="--focus:'+w.color+';border-color:'+hexA(w.color,0.35)+';box-shadow:0 0 14px '+hexA(w.color,0.10)+';">';
       html += '    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
       html += '      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>Место работы '+n+'</span>';
-      if(activeCount > 1){
-        html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
-      }
+      html += '      <span class="clear-btn" onclick="WC.removeWorkplace('+idx+')">Удалить</span>';
       html += '    </div>';
       html += '    <div class="field"><label>Название</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpNameInput'+idx+'" value="'+esc(w.name)+'" oninput="WC.editWp('+idx+',\'name\',this.value)"></div>';
-      html += '    <div class="rate-row">';
-      html += '      <div class="field"><label>Оплата за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpShiftPayInput'+idx+'" value="'+payFieldText(w, 'shiftPay')+'" oninput="WC.editWp('+idx+',\'shiftPay\',this.value)"></div>';
-      html += '      <div class="field"><label>Оплата за час</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="0" id="wpRateInput'+idx+'" value="'+payFieldText(w, 'hourRate')+'" oninput="WC.editWp('+idx+',\'hourRate\',this.value)"></div>';
-      html += '    </div>';
-      html += '    <div class="rate-row">';
-      html += '      <div class="field"><label>Часов в смене</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpShiftHoursInput'+idx+'" value="'+numText(wpShiftHours(w))+'" oninput="WC.editWp('+idx+',\'shiftHours\',this.value)"></div>';
-      html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpCurrencyInput'+idx+'" value="'+esc(w.currency||'₽')+'" oninput="WC.editWp('+idx+',\'currency\',this.value)"></div>';
-      html += '    </div>';
-      html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 8px;">Впиши оплату за смену или за час — второе посчитается само. Ушёл раньше — поставь в календаре меньше часов, и оплата пересчитается.</div>';
-      html += '    <div class="field"><label>Цвет</label><div class="color-swatches">';
-      SWATCH_COLORS.forEach(c=>{
-        const active = w.color===c;
-        html += '<div class="swatch'+(active?' active':'')+'" style="background:'+c+(active?';box-shadow:0 0 8px '+c:'')+'" onclick="WC.updateWp('+idx+',\'color\',\''+c+'\')"></div>';
-      });
-      html += '    </div></div>';
+      html += wpPayFieldsHtml(w, idx);
+      html += wpColorHtml(w, idx);
       html += '  </div>';
     });
+    if(!activeCount) html += '  <div style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.4;">Пока нет ни одного места работы.</div>';
     if(activeCount < 10){
       html += '  <div class="choice" style="text-align:center;color:var(--amber);box-shadow:none;margin-top:4px;" onclick="WC.addWorkplace()">+ Добавить место работы</div>';
     } else {
@@ -1987,7 +2226,7 @@
       html += '  <div style="display:flex;flex-direction:column;gap:8px;">';
       archived.forEach(w=>{
         const cnt = Object.keys(state.shifts).filter(k=> state.shifts[k] && state.shifts[k].workplaceId===w.id).length;
-        html += '    <div class="week-item"><span class="wl" style="color:var(--text);"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>'+esc(w.name)+' <span style="color:var(--muted)">· '+cnt+' смен</span></span><span class="clear-btn" style="color:var(--teal);" onclick="WC.restoreWorkplace(\''+w.id+'\')">Вернуть</span></div>';
+        html += '    <div class="week-item" style="flex-wrap:wrap;gap:8px;"><span class="wl" style="color:var(--text);"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>'+esc(w.name)+' <span style="color:var(--muted)">· '+cnt+' '+shiftsWord(cnt)+'</span></span><span style="display:flex;gap:14px;flex-shrink:0;"><span class="clear-btn" style="color:var(--teal);" onclick="WC.restoreWorkplace(\''+w.id+'\')">Вернуть</span><span class="clear-btn" onclick="WC.deleteWorkplaceForever(\''+w.id+'\')">Удалить навсегда</span></span></div>';
       });
       html += '  </div>';
     }
@@ -4355,7 +4594,9 @@
         const k = dateKey(R.year, R.month, d), cur = state.shifts[k], v = R.days[d];
         if(v !== undefined){
           if(cur && cur.workplaceId && cur.workplaceId !== p.importWp){ skipped++; continue; } // день уже занят другой работой
+          const prevSales = (cur && cur.workplaceId === p.importWp && cur.sales != null) ? cur.sales : null;
           state.shifts[k] = { workplaceId:p.importWp, hours:(typeof v === 'number' && v > 1) ? v : p.importHours, dayOff:false };
+          if(prevSales != null) state.shifts[k].sales = prevSales;
           added++;
         } else if(p.importOff === 'off' && !cur){
           state.shifts[k] = { dayOff:true };
@@ -4466,18 +4707,22 @@
     },
     exportAll(){
       const allKeys = Object.keys(state.shifts).filter(k=> (!exportForm.from || k>=exportForm.from) && (!exportForm.to || k<=exportForm.to)).sort();
-      const combinedRows = allKeys.map(k=>{
+      let combinedRows = allKeys.map(k=>{
         const s = state.shifts[k];
         if(s.dayOff) return { 'Дата':k, 'Место':'Выходной', 'Часов':'', 'Оплата':0 };
         const wp = getWorkplace(s.workplaceId);
         const pay = calcPay(s);
-        return {
+        const r = {
           'Дата': k,
           'Место': wp ? wp.name : '—',
           'Часов': wp ? shiftHoursOf(s, wp) : (s.hours!=null ? s.hours : ''),
           'Оплата': Math.round(pay*100)/100
         };
+        if(s.sales > 0 && wp && wp.salesMode === 'shift') r['Продажи'] = s.sales;
+        return r;
       });
+      state.workplaces.forEach(function(w){ combinedRows = combinedRows.concat(monthBonusRows(w.id, exportForm.from, exportForm.to, true)); });
+      combinedRows.sort(function(a,b){ return a['Дата'] < b['Дата'] ? -1 : (a['Дата'] > b['Дата'] ? 1 : 0); });
       const sheets = [{ name:'Все', rows: combinedRows }];
       state.workplaces.forEach(w=> sheets.push({ name: w.name, rows: buildWorkplaceRows(w.id, exportForm.from, exportForm.to) }));
       exportWorkbook(sheets, 'Табель-полный_'+exportForm.from+'_'+exportForm.to+'.xlsx');
@@ -4569,7 +4814,9 @@
       if(!selectedDate) return;
       const existing = state.shifts[selectedDate] || {};
       const pw = getWorkplace(wpId);
-      state.shifts[selectedDate] = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : (pw ? wpShiftHours(pw) : undefined), dayOff:false };
+      const ns = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : (pw ? wpShiftHours(pw) : undefined), dayOff:false };
+      if(existing.workplaceId===wpId && existing.sales != null) ns.sales = existing.sales;
+      state.shifts[selectedDate] = ns;
       editorPickerOpen = false;
       saveState(); render();
     },
@@ -4598,6 +4845,40 @@
         saveState(); render();
       });
     },
+    setSales(v){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate];
+      if(!s) return;
+      const n = parseNum(v);
+      if(String(v).trim() === '') delete s.sales;
+      else if(isFinite(n)) s.sales = n;
+      else return;
+      const pay = document.getElementById('editorPay');
+      if(pay) pay.innerHTML = editorPayHtml(s);
+      scheduleSave();
+    },
+    editBonus(wpId, key, value){
+      const w = getWorkplace(wpId);
+      if(!w) return;
+      const n = parseNum(value);
+      let v;
+      if(String(value).trim() === '') v = undefined; else if(isFinite(n)) v = n; else return;
+      if(key === 'percent' && v > 100) return;
+      const mk = monthKeyOf(view.year, view.month);
+      const row = state.bonuses[mk] || (state.bonuses[mk] = {});
+      if(!row[wpId]){
+        // первая правка месяца — забираем подставленные процент и фикс из прошлого месяца
+        const d = bonusDefaults(wpId, mk); row[wpId] = {};
+        if(d.percent !== '') row[wpId].percent = d.percent;
+        if(d.fix !== '') row[wpId].fix = d.fix;
+      }
+      if(v === undefined) delete row[wpId][key]; else row[wpId][key] = v;
+      const res = document.getElementById('bonusRes-'+wpId);
+      if(res) res.innerHTML = bonusResultHtml(w, row[wpId]);
+      refreshMonthSummary();
+      deferredRender = true;   // годовая статистика пересчитается, когда клавиатуру закроют
+      scheduleSave();
+    },
     setHours(v){
       if(!selectedDate) return;
       const s = state.shifts[selectedDate];
@@ -4617,8 +4898,17 @@
       saveState(); render();
     },
     editWp(idx, key, value){
-      const w = state.workplaces[idx];
+      const isNew = idx === 'new';
+      const w = isNew ? newWpForm : state.workplaces[idx];
       if(!w) return;
+      if(key === 'salesPercent'){
+        const n = parseNum(value);
+        if(String(value).trim() === '') w.salesPercent = 0;
+        else if(isFinite(n) && n <= 100) w.salesPercent = n;
+        else return;
+        if(!isNew) scheduleSave();
+        return;
+      }
       if(key==='rate' || key==='shiftPay' || key==='hourRate'){
         const n = parseNum(value);
         let v;
@@ -4637,14 +4927,16 @@
         if(other) other.value = payFieldText(w, w.payType==='daily' ? 'hourRate' : 'shiftPay');
       }
       else w[key] = value;
-      scheduleSave();
+      if(!isNew) scheduleSave();
     },
     updateWp(idx, key, value){
-      const w = state.workplaces[idx];
+      const isNew = idx === 'new';
+      const w = isNew ? newWpForm : state.workplaces[idx];
       if(!w) return;
       if(key==='rate') w.rate = parseFloat(value)||0;
       else w[key] = value;
-      saveState(); render();
+      if(!isNew) saveState();
+      render();
     },
     exportBackup(){
       const raw = JSON.stringify(state, null, 2);
@@ -4679,6 +4971,7 @@
           if(migrated.shifts) state.shifts = migrated.shifts;
           state.payments = Array.isArray(migrated.payments) ? migrated.payments : [];
           if(migrated.profile && typeof migrated.profile === 'object') state.profile = migrated.profile;
+          state.bonuses = (migrated.bonuses && typeof migrated.bonuses === 'object') ? migrated.bonuses : {};
           state.version = migrated.version;
           normalizeState();
           saveState(); render();
@@ -4688,27 +4981,50 @@
     },
     addWorkplace(){
       if(activeWorkplaces().length >= 10){ showAlert('Максимум 10 текущих мест работы.'); return; }
-      const idx = state.workplaces.length;
-      state.workplaces.push({
-        id: 'w'+Date.now(),
-        name: 'Работа '+(idx+1),
-        color: SWATCH_COLORS[idx % SWATCH_COLORS.length],
-        payType: 'hourly',
-        rate: 0,
-        currency: '₽',
-        shiftHours: 8
-      });
-      saveState(); render();
+      const used = activeWorkplaces().map(function(w){ return w.color; });
+      const color = SWATCH_COLORS.find(function(c){ return used.indexOf(c) < 0; }) || SWATCH_COLORS[0];
+      const any = state.workplaces[0];
+      newWpForm = { name:'', color: color, payType:'daily', rate:0, currency: any && any.currency ? any.currency : '₽', shiftHours: 8, salesMode:'none', salesPercent:0, salesFix:false };
+      render();
+    },
+    cancelNewWp(){ newWpForm = null; render(); },
+    saveNewWp(){
+      const f = newWpForm;
+      if(!f) return;
+      if(activeWorkplaces().length >= 10){ showAlert('Максимум 10 текущих мест работы.'); return; }
+      const name = String(f.name || '').trim() || ('Работа '+(activeWorkplaces().length+1));
+      const w = { id:'w'+Date.now(), name:name, color:f.color, payType:f.payType==='hourly'?'hourly':'daily', rate:f.rate||0, currency:String(f.currency||'').trim()||'₽',
+                  archived:false, shiftHours:f.shiftHours>0?f.shiftHours:8, salesMode:f.salesMode||'none', salesPercent:f.salesPercent||0, salesFix:!!f.salesFix };
+      state.workplaces.push(w);
+      const pw = getWorkplace(patternForm.workplaceId);
+      if(!pw || pw.archived){ patternForm.workplaceId = w.id; patternForm.hours = wpShiftHours(w); }
+      newWpForm = null;
+      saveState();
+      showFlash('✓ «'+name+'» добавлено');
+      render();
     },
     removeWorkplace(idx){
-      if(activeWorkplaces().length <= 1){ showAlert('Должно остаться хотя бы одно текущее место работы.'); return; }
       const w = state.workplaces[idx];
       if(!w) return;
-      askConfirm('Убрать «'+w.name+'» из текущих мест работы? Все отработанные смены и заработок останутся в календаре и отчётах — работа переедет в «Бывшие места работы», откуда её можно вернуть.', function(){
+      const used = Object.keys(state.shifts).some(function(k){ return state.shifts[k] && state.shifts[k].workplaceId === w.id; }) ||
+                   Object.keys(state.bonuses).some(function(mk){ return state.bonuses[mk] && state.bonuses[mk][w.id]; });
+      if(!used){
+        askConfirm('Удалить «'+w.name+'»? Смен у этой работы нет.', function(){ eraseWorkplace(w.id); saveState(); render(); }, 'Удалить');
+        return;
+      }
+      askConfirm('Убрать «'+w.name+'» из текущих мест работы? Все отработанные смены и заработок останутся в календаре и отчётах — работа переедет в «Бывшие места работы», откуда её можно вернуть или удалить навсегда.', function(){
         w.archived = true;
-        if(patternForm.workplaceId === w.id){ const a = activeWorkplaces()[0]; if(a) patternForm.workplaceId = a.id; }
+        if(patternForm.workplaceId === w.id){ const a = activeWorkplaces()[0]; patternForm.workplaceId = a ? a.id : ''; }
         saveState(); render();
       }, 'Убрать');
+    },
+    deleteWorkplaceForever(id){
+      const w = getWorkplace(id);
+      if(!w) return;
+      const cnt = Object.keys(state.shifts).filter(function(k){ return state.shifts[k] && state.shifts[k].workplaceId === id; }).length;
+      askConfirm('Удалить «'+w.name+'» навсегда? '+(cnt ? 'Из календаря и отчётов удалятся все её смены ('+cnt+') и премии. ' : '')+'Записи о выплатах останутся. Отменить это нельзя.', function(){
+        eraseWorkplace(id); saveState(); render();
+      }, 'Удалить навсегда');
     },
     restoreWorkplace(id){
       const w = getWorkplace(id);
