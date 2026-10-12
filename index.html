@@ -878,7 +878,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 5;
-  const APP_BUILD = 'iOS · 2026-10-12 · v19';
+  const APP_BUILD = 'iOS · 2026-10-12 · v19.1';
 
   let state = {
     version: CURRENT_VERSION,
@@ -2226,7 +2226,7 @@
       html += '  <div style="display:flex;flex-direction:column;gap:8px;">';
       archived.forEach(w=>{
         const cnt = Object.keys(state.shifts).filter(k=> state.shifts[k] && state.shifts[k].workplaceId===w.id).length;
-        html += '    <div class="week-item" style="flex-wrap:wrap;gap:8px;"><span class="wl" style="color:var(--text);"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>'+esc(w.name)+' <span style="color:var(--muted)">· '+cnt+' '+shiftsWord(cnt)+'</span></span><span style="display:flex;gap:14px;flex-shrink:0;"><span class="clear-btn" style="color:var(--teal);" onclick="WC.restoreWorkplace(\''+w.id+'\')">Вернуть</span><span class="clear-btn" onclick="WC.deleteWorkplaceForever(\''+w.id+'\')">Удалить навсегда</span></span></div>';
+        html += '    <div class="week-item" style="flex-wrap:wrap;gap:8px;"><span class="wl" style="color:var(--text);flex:1 1 150px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+w.color+';box-shadow:0 0 6px '+w.color+';"></span>'+esc(w.name)+' <span style="color:var(--muted)">· '+cnt+' '+shiftsWord(cnt)+'</span></span><span style="display:flex;gap:14px;flex-shrink:0;"><span class="clear-btn" style="color:var(--teal);" onclick="WC.restoreWorkplace(\''+w.id+'\')">Вернуть</span><span class="clear-btn" onclick="WC.deleteWorkplaceForever(\''+w.id+'\')">Удалить навсегда</span></span></div>';
       });
       html += '  </div>';
     }
