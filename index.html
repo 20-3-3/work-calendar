@@ -305,6 +305,26 @@
     width: 80px;
     font-family:'IBM Plex Mono', monospace;
   }
+  .time-in{
+    -webkit-appearance: none; appearance: none;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 16px;
+    width: 92px;
+    box-sizing: border-box;
+    text-align: center;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .time-in::-webkit-calendar-picker-indicator{ display:none; }
+  .time-in::-webkit-date-and-time-value{ text-align:center; margin:0; min-height:1.2em; }
+  .time-in{ min-height: 38px; line-height: 1.2; }
+  .field .time-in{ width: 100%; text-align: left; }
+  :root:not(.light-theme) .time-in{ border-color: transparent; border-radius: 12px; }
+  .time-sub{ font-size: 12px; color: var(--muted); margin: -4px 0 10px; }
+  .time-dash{ color: var(--muted); }
   .preview-pay{
     font-size: 13px;
     color: var(--muted);
@@ -877,8 +897,8 @@
   // Schema version of the persisted data. Bump this and add a step in migrateState()
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
-  const CURRENT_VERSION = 5;
-  const APP_BUILD = 'iOS · 2026-10-12 · v20';
+  const CURRENT_VERSION = 6;
+  const APP_BUILD = 'iOS · 2026-11-16 · v21';
 
   let state = {
     version: CURRENT_VERSION,
@@ -892,6 +912,7 @@
   let view = { year: new Date().getFullYear(), month: new Date().getMonth() };
   let selectedDate = null;
   let editorPickerOpen = false;
+  let editorPresetsOpen = false;   // кнопки смен в окне дня развёрнуты
   let statsYear = new Date().getFullYear();
   let lastWeekDateKeys = [];
   let loaded = false;
@@ -961,7 +982,94 @@
       const full = wpShiftHours(wp);
       pay = h === full ? wp.rate : wp.rate * h / full;
     } else pay = h * wp.rate;
-    return pay + shiftBonusOf(shift, wp);
+    return pay + nightExtraOf(shift, wp) + shiftBonusOf(shift, wp);
+  }
+  // ---- Время смены «с … до …» и ночные часы ----
+  function tMin(t){ const m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  // Длина смены в минутах; «до» раньше «с» — смена через полночь
+  function spanMin(from, to){
+    const a = tMin(from), b = tMin(to);
+    if(a == null || b == null) return null;
+    let d = b - a; if(d <= 0) d += 1440;
+    return d;
+  }
+  // Сколько минут смены попадает в ночной промежуток работы (например 22:00–06:00)
+  function nightMin(from, to, wp){
+    const a = tMin(from), d = spanMin(from, to);
+    const n1 = tMin(wp.nightFrom || '22:00'), n2 = tMin(wp.nightTo || '06:00');
+    if(a == null || d == null || n1 == null || n2 == null) return 0;
+    let nd = n2 - n1; if(nd <= 0) nd += 1440;
+    let total = 0;
+    for(let k = -1; k <= 1; k++){
+      const st = n1 + k * 1440, en = st + nd;
+      total += Math.max(0, Math.min(a + d, en) - Math.max(a, st));
+    }
+    return total;
+  }
+  // Неоплачиваемый перерыв работы в минутах (0 — перерыв оплачивается или его нет)
+  function wpBreakMin(wp){ return (wp && wp.breakMode === 'unpaid' && wp.breakMin > 0) ? wp.breakMin : 0; }
+  // Оплачиваемые часы смены по времени: от «с» до «до» минус неоплачиваемый перерыв
+  // Перерыв конкретной смены: вписанный вручную, иначе обычный перерыв работы
+  function shiftBreakMin(shift, wp){
+    if(!wp || wp.breakMode !== 'unpaid') return 0;
+    return (shift && typeof shift.breakMin === 'number' && shift.breakMin >= 0) ? shift.breakMin : wpBreakMin(wp);
+  }
+  function paidHoursByTime(from, to, wp, shift){
+    const d = spanMin(from, to);
+    if(!d) return null;
+    return Math.max(0, d - shiftBreakMin(shift, wp)) / 60;
+  }
+  // Ночные часы: по времени смены; перерыв сначала вычитается из дневных часов
+  // Когда был перерыв смены: 'day' или 'night'. Если не выбрано — в той части смены, которая длиннее
+  function shiftBreakAt(shift, wp){
+    if(shift.breakAt === 'day' || shift.breakAt === 'night') return shift.breakAt;
+    const n = nightMin(shift.from, shift.to, wp), d = spanMin(shift.from, shift.to) || 0;
+    return n > d - n ? 'night' : 'day';
+  }
+  // Оплачиваемые ночные часы: ночные по времени смены минус перерыв, если он был ночью
+  // (перерыв длиннее выбранной части смены — остаток вычитается из другой части)
+  function nightHoursOf(shift, wp){
+    if(!wp || !wp.nightMode || wp.nightMode === 'none' || !shift.from || !shift.to) return 0;
+    const span = spanMin(shift.from, shift.to), n = nightMin(shift.from, shift.to, wp), br = Math.min(shiftBreakMin(shift, wp), span);
+    const fromNight = shiftBreakAt(shift, wp) === 'night' ? Math.min(br, n) : Math.max(0, br - (span - n));
+    return (n - fromNight) / 60;
+  }
+  // Доплата за один ночной час: процент от часовой ставки или фиксированная сумма
+  function nightHourExtra(wp){
+    if(!wp || !(wp.nightValue > 0)) return 0;
+    if(wp.nightMode === 'percent') return wpHourRate(wp) * wp.nightValue / 100;
+    if(wp.nightMode === 'fixed') return wp.nightValue;
+    return 0;
+  }
+  function nightExtraOf(shift, wp){ return nightHoursOf(shift, wp) * nightHourExtra(wp); }
+  function nightHintText(w){
+    const ex = nightHourExtra(w);
+    return 'Каждый час смены с '+(w.nightFrom||'22:00')+' до '+(w.nightTo||'06:00')+' стоит '+(ex > 0 ? fmtMoney(wpHourRate(w) + ex, w.currency)+' вместо '+fmtMoney(wpHourRate(w), w.currency) : 'дороже обычного')+'. Считается по времени смены в календаре.';
+  }
+  function hoursText(h){ return numText(Math.round(h * 100) / 100); }
+  // У работы включено время смен: есть кнопки смен, ночная доплата или неоплачиваемый перерыв
+  function wpUsesTime(wp){
+    return !!(wp && ((wp.presets && wp.presets.length) || (wp.nightMode && wp.nightMode !== 'none') || wp.breakMode === 'unpaid'));
+  }
+  // Новая смена по кнопке смены работы: время, обычный перерыв и оплачиваемые часы
+  function shiftFromPreset(wp, pr){
+    const sh = { workplaceId: wp.id, from: pr.from, to: pr.to, dayOff: false };
+    if(wp.breakMode === 'unpaid') sh.breakMin = wpBreakMin(wp);
+    sh.hours = paidHoursByTime(sh.from, sh.to, wp, sh);
+    return sh;
+  }
+  function presetOfShift(s, wp){
+    return (wp && wp.presets || []).find(function(x){ return s.from === x.from && s.to === x.to; }) || null;
+  }
+  // «Часов в смене» работы следует за первой кнопкой смены и обычным перерывом
+  function syncShiftHours(w){
+    const p0 = w.presets && w.presets[0];
+    if(!p0) return;
+    const h = paidHoursByTime(p0.from, p0.to, w, null);
+    if(h > 0) w.shiftHours = h;
+  }
+  function presetLabelHtml(pr){
+    return pr ? esc(pr.name || 'Смена')+' <span class="mono" style="font-weight:400;opacity:.85;">'+pr.from+'–'+pr.to+'</span>' : 'Своё время';
   }
   // Процент с продаж за смену: продажи дня × процент работы (только если у работы режим «с каждой смены»)
   function shiftBonusOf(shift, wp){
@@ -1103,6 +1211,12 @@
       if(!parsed.bonuses || typeof parsed.bonuses !== 'object' || Array.isArray(parsed.bonuses)) parsed.bonuses = {};
       v = 5;
     }
+    if(v < 6){
+      // v5 -> v6: время смены. У работы — presets (смены «с … до …»), nightMode/nightValue/nightFrom/nightTo
+      // (ночные часы дороже на % или на сумму), breakMode/breakMin (неоплачиваемый перерыв);
+      // у смены — from, to, breakMin, breakAt. Старые смены остаются как были: без времени и без ночной доплаты.
+      v = 6;
+    }
     parsed.version = v;
     return parsed;
   }
@@ -1121,7 +1235,15 @@
       shiftHours: (w && typeof w.shiftHours==='number' && w.shiftHours > 0) ? w.shiftHours : (typicalShiftHours(state.shifts, w && w.id ? w.id : ('w'+(i+1))) || 8),
       salesMode: (w && (w.salesMode==='shift' || w.salesMode==='month')) ? w.salesMode : 'none',
       salesPercent: (w && typeof w.salesPercent==='number' && w.salesPercent >= 0) ? w.salesPercent : 0,
-      salesFix: !!(w && w.salesFix)
+      salesFix: !!(w && w.salesFix),
+      nightMode: (w && (w.nightMode==='percent' || w.nightMode==='fixed')) ? w.nightMode : 'none',
+      nightValue: (w && typeof w.nightValue==='number' && w.nightValue >= 0) ? w.nightValue : 0,
+      nightFrom: (w && tMin(w.nightFrom) != null) ? w.nightFrom : '22:00',
+      nightTo: (w && tMin(w.nightTo) != null) ? w.nightTo : '06:00',
+      presets: (w && Array.isArray(w.presets)) ? w.presets.filter(function(x){ return x && tMin(x.from) != null && tMin(x.to) != null; })
+                 .map(function(x){ return { name: String(x.name || ''), from: x.from, to: x.to }; }) : [],
+      breakMode: (w && w.breakMode === 'unpaid') ? 'unpaid' : 'paid',
+      breakMin: (w && typeof w.breakMin === 'number' && w.breakMin >= 0) ? w.breakMin : 0
     }));
     state.workplaces = list;   // список может быть пустым — тогда приложение предложит добавить работу
     state.shifts = (state.shifts && typeof state.shifts === 'object') ? state.shifts : {};
@@ -1243,6 +1365,11 @@
         'Оплата': Math.round(pay*100)/100
       };
       if(wp && wp.salesMode === 'shift') r['Продажи'] = s.sales > 0 ? s.sales : '';
+      if(wp && wpUsesTime(wp)){
+        r['Время'] = (s.from && s.to) ? s.from+'–'+s.to : '';
+        if(wp.breakMode === 'unpaid') r['Перерыв, мин'] = (s.from && s.to) ? shiftBreakMin(s, wp) : '';
+        if(wp.nightMode && wp.nightMode !== 'none') r['Ночных часов'] = Math.round(nightHoursOf(s, wp)*100)/100;
+      }
       return r;
     });
     return rows.concat(monthBonusRows(wpId, from, to, false)).sort(function(a,b){ return a['Дата'] < b['Дата'] ? -1 : (a['Дата'] > b['Дата'] ? 1 : 0); });
@@ -1966,6 +2093,44 @@
       html += '    <div class="field"><label>Фикс</label><div class="choice-row" style="margin-bottom:6px;">'+wpChoiceHtml('Нет', !w.salesFix, w.color, up('salesFix','false'))+wpChoiceHtml('Есть', !!w.salesFix, w.color, up('salesFix','true'))+'</div></div>';
       html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 10px;">Процент'+(w.salesFix?', фикс':'')+' и продажи за месяц вписываются в «Отчётах» — блок «Премиальная часть». '+(w.salesFix?'Премия = (продажи − фикс) × процент.':'Премия = продажи × процент.')+'</div>';
     }
+    html += '    <div class="field" style="margin-bottom:4px;"><label>Смены — со скольки до скольки</label></div>';
+    (w.presets || []).forEach(function(pr, i){
+      const pe = function(key){ return 'WC.editPreset('+r+','+i+',\''+key+'\',this.value)'; };
+      html += '    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">';
+      html += '      <div class="field" style="flex:1 1 0;min-width:0;margin:0;"><input type="text" autocomplete="off" enterkeyhint="done" placeholder="Название" id="wpPresetName'+ref+'_'+i+'" value="'+esc(pr.name)+'" oninput="'+pe('name')+'"></div>';
+      html += '      <input type="time" class="time-in" style="flex:none;" id="wpPresetFrom'+ref+'_'+i+'" value="'+pr.from+'" onchange="'+pe('from')+'"><span class="time-dash">—</span><input type="time" class="time-in" style="flex:none;" id="wpPresetTo'+ref+'_'+i+'" value="'+pr.to+'" onchange="'+pe('to')+'">';
+      html += '      <span class="clear-btn" style="flex:none;font-size:16px;padding:4px 2px;" onclick="WC.removePreset('+r+','+i+')">×</span>';
+      html += '    </div>';
+    });
+    if((w.presets || []).length < 4) html += '    <div class="choice" style="color:'+w.color+';margin:0 0 6px;padding:8px;" onclick="WC.addPreset('+r+')">+ Добавить смену</div>';
+    html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:0 0 10px;">'+((w.presets || []).length ? 'В календаре смена ставится одной кнопкой, время можно поправить. Первая смена подставляется в новые дни.' : 'Нужны, если важно время работы: ночные часы дороже или есть неоплачиваемый перерыв. Без смен всё считается по часам, как раньше.')+'</div>';
+    html += '    <div class="field"><label>Перерыв</label><div class="choice-row" style="margin-bottom:6px;">';
+    html += wpChoiceHtml('Оплачивается', w.breakMode !== 'unpaid', w.color, up('breakMode', "\'paid\'"));
+    html += wpChoiceHtml('Не оплачивается', w.breakMode === 'unpaid', w.color, up('breakMode', "\'unpaid\'"));
+    html += '    </div></div>';
+    if(w.breakMode === 'unpaid'){
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Обычный перерыв, минут</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="numeric" placeholder="Например: 60" id="wpBreakInput'+ref+'" value="'+(w.breakMin > 0 ? numText(w.breakMin) : '')+'" oninput="'+ed('breakMin')+'"></div>';
+      html += '    </div>';
+      html += '    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 10px;">Подставляется в каждую новую смену и вычитается из оплаты. В окне дня перерыв можно поменять — в разные смены он бывает разным.</div>';
+    }
+    html += '    <div class="field"><label>Ночные часы</label><div class="choice-row" style="margin-bottom:6px;">';
+    html += wpChoiceHtml('Как обычные', (w.nightMode||'none')==='none', w.color, up('nightMode', "\'none\'"));
+    html += wpChoiceHtml('Дороже на %', w.nightMode==='percent', w.color, up('nightMode', "\'percent\'"));
+    html += wpChoiceHtml('Дороже на ₽', w.nightMode==='fixed', w.color, up('nightMode', "\'fixed\'"));
+    html += '    </div></div>';
+    if(w.nightMode === 'percent' || w.nightMode === 'fixed'){
+      const pc = w.nightMode === 'percent';
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>'+(pc ? 'Доплата за ночной час, %' : 'Доплата за ночной час, '+esc(w.currency||'₽'))+'</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" placeholder="'+(pc?'Например: 20':'Например: 50')+'" id="wpNightInput'+ref+'" value="'+(w.nightValue > 0 ? numText(w.nightValue) : '')+'" oninput="'+ed('nightValue')+'"></div>';
+      html += '    </div>';
+      html += '    <div class="rate-row">';
+      html += '      <div class="field"><label>Ночь с</label><input type="time" class="time-in" id="wpNightFrom'+ref+'" value="'+(w.nightFrom||'22:00')+'" onchange="'+ed('nightFrom')+'"></div>';
+      html += '      <div class="field"><label>до</label><input type="time" class="time-in" id="wpNightTo'+ref+'" value="'+(w.nightTo||'06:00')+'" onchange="'+ed('nightTo')+'"></div>';
+      html += '    </div>';
+      const ex = nightHourExtra(w);
+      html += '    <div id="wpNightHint'+ref+'" style="font-size:11px;color:var(--muted);line-height:1.4;margin:-2px 0 10px;">'+nightHintText(w)+'</div>';
+    }
     html += '    <div class="rate-row">';
     html += '      <div class="field"><label>Часов в смене</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="wpShiftHoursInput'+ref+'" value="'+numText(wpShiftHours(w))+'" oninput="'+ed('shiftHours')+'"></div>';
     html += '      <div class="field"><label>Валюта</label><input type="text" autocomplete="off" enterkeyhint="done" id="wpCurrencyInput'+ref+'" value="'+esc(w.currency||'₽')+'" oninput="'+ed('currency')+'"></div>';
@@ -2021,6 +2186,13 @@
     return 'смен';
   }
 
+  // После смены длины смены — обновить «Часов в смене» и посчитанное поле оплаты, не перерисовывая экран
+  function refreshWpDerived(w, idx){
+    const hEl = document.getElementById('wpShiftHoursInput'+idx);
+    if(hEl && hEl !== document.activeElement) hEl.value = numText(wpShiftHours(w));
+    const other = document.getElementById((w.payType==='daily' ? 'wpRateInput' : 'wpShiftPayInput')+idx);
+    if(other && other !== document.activeElement) other.value = payFieldText(w, w.payType==='daily' ? 'hourRate' : 'shiftPay');
+  }
   // Текст полей оплаты в настройках: введённое число как есть, второе — посчитанное (до копеек)
   function payFieldText(w, field){
     if(!(w.rate > 0)) return '';
@@ -2032,11 +2204,58 @@
     const wp = getWorkplace(s.workplaceId), pay = calcPay(s);
     let html = 'Оплата: <span class="v mono">'+fmtMoney(pay, wp?wp.currency:'₽')+'</span>';
     if(wp){
-      const h = shiftHoursOf(s, wp), full = wpShiftHours(wp), b = shiftBonusOf(s, wp);
-      html += ' <span style="color:var(--muted);">· '+numText(h)+' ч × '+fmtMoney(wpHourRate(wp), wp.currency)+'/ч'+(h < full ? ' (смена '+numText(full)+' ч)' : '');
+      const h = shiftHoursOf(s, wp), full = wpShiftHours(wp), b = shiftBonusOf(s, wp), nh = nightHoursOf(s, wp), ne = nightExtraOf(s, wp);
+      html += ' <span style="color:var(--muted);">· '+hoursText(h)+' ч × '+fmtMoney(wpHourRate(wp), wp.currency)+'/ч'+(h < full ? ' (смена '+numText(full)+' ч)' : '');
+      if(ne > 0) html += ' + ночные '+hoursText(nh)+' ч × '+fmtMoney(nightHourExtra(wp), wp.currency)+' = '+fmtMoney(ne, wp.currency);
       if(b > 0) html += ' + '+numText(wp.salesPercent)+'% с продаж '+fmtMoney(b, wp.currency);
       html += '</span>';
     }
+    return html;
+  }
+  function timeSubHtml(s, wp){
+    const d = spanMin(s.from, s.to);
+    if(!d){
+      const h = (typeof s.hours === 'number' && isFinite(s.hours)) ? 'Сейчас записано '+hoursText(s.hours)+' ч без времени. ' : '';
+      return h+'Укажи, со скольки до скольки была смена'+(wp && wp.nightMode && wp.nightMode !== 'none' ? ' — тогда посчитаются ночные часы.' : '.');
+    }
+    const br = shiftBreakMin(s, wp);
+    let t = hoursText(d / 60)+' ч на работе'+(tMin(s.to) <= tMin(s.from) ? ' (до '+s.to+' следующего дня)' : '');
+    if(br > 0) t += ' · за вычетом перерыва к оплате '+hoursText(paidHoursByTime(s.from, s.to, wp, s))+' ч';
+    if(wp && wp.nightMode && wp.nightMode !== 'none') t += (br > 0 ? ', из них ночных ' : ' · ночных ')+hoursText(nightHoursOf(s, wp))+' ч';
+    return t;
+  }
+  // Окно дня у работы со временем: кнопки смен (сворачиваются), время «с — до», перерыв
+  function editorTimeHtml(s, ewp, withSales){
+    const lw = ' style="min-width:64px;"';
+    const tin = function(id, v, which){ return '<input type="time" class="time-in" id="'+id+'" value="'+(v||'')+'" onchange="WC.setShiftTime(\''+which+'\',this.value)">'; };
+    let html = '';
+    if(ewp.presets && ewp.presets.length){
+      const cur = presetOfShift(s, ewp), open = editorPresetsOpen;
+      html += '  <div class="hours-row" style="margin-bottom:6px;" onclick="WC.togglePresets()"><label'+lw+'>Смена</label>';
+      html += '<div class="choice'+(open?'':' active')+'" style="flex:none;padding:7px 12px;color:'+ewp.color+(open?'':';background:'+ewp.color+'22;box-shadow:0 0 10px '+ewp.color)+'"><span id="presetCur">'+presetLabelHtml(cur)+'</span> <span style="font-size:11px;opacity:.8;margin-left:4px;">'+(open?'▴':'▾')+'</span></div></div>';
+      if(open){
+        html += '  <div class="choice-row" style="margin:0 0 10px;">';
+        ewp.presets.forEach(function(pr, i){
+          const on = cur === pr;
+          html += '<div class="choice'+(on?' active':'')+'" style="flex:1 1 0;min-width:0;padding:8px 4px;color:'+ewp.color+(on?';background:'+ewp.color+'22;box-shadow:0 0 10px '+ewp.color:'')+'" onclick="WC.pickPreset('+i+')">'+esc(pr.name || 'Смена')+'<div class="mono" style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">'+pr.from+'–'+pr.to+'</div></div>';
+        });
+        html += '  </div>';
+      }
+    }
+    html += '  <div class="hours-row"><label'+lw+'>Время</label>'+tin('fromInput', s.from, 'from')+'<span class="time-dash">—</span>'+tin('toInput', s.to, 'to')+'</div>';
+    const sp = spanMin(s.from, s.to);
+    if(ewp.breakMode === 'unpaid' && sp){
+      const nm = nightMin(s.from, s.to, ewp);
+      const both = ewp.nightMode && ewp.nightMode !== 'none' && nm > 0 && nm < sp;   // выбор нужен, только если в смене есть и день, и ночь
+      html += '  <div class="hours-row"><label'+lw+'>Перерыв</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="numeric" id="breakInput" placeholder="0" style="width:64px;" value="'+numText(shiftBreakMin(s, ewp))+'" oninput="WC.setShiftBreak(this.value)"><span style="font-size:13px;color:var(--muted);">мин</span>';
+      if(both){
+        const at = shiftBreakAt(s, ewp);
+        const seg = function(v, t){ const on = at === v; return '<div class="choice'+(on?' active':'')+'" style="flex:none;min-width:0;padding:7px 12px;color:'+ewp.color+(on?';background:'+ewp.color+'22;box-shadow:0 0 10px '+ewp.color:'')+'" onclick="WC.setBreakAt(\''+v+'\')">'+t+'</div>'; };
+        html += '<span style="display:flex;gap:6px;margin-left:auto;">'+seg('day','днём')+seg('night','ночью')+'</span>';
+      }
+      html += '</div>';
+    }
+    html += '  <div class="time-sub" id="timeSub">'+timeSubHtml(s, ewp)+'</div>';
     return html;
   }
 
@@ -2076,7 +2295,9 @@
 
     if(s.workplaceId){
       const ewp = getWorkplace(s.workplaceId), withSales = !!(ewp && ewp.salesMode === 'shift');
-      html += '  <div class="hours-row"><label'+(withSales?' style="min-width:64px;"':'')+'>Часов</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" placeholder="'+numText(wpShiftHours(ewp))+'" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
+      // Время показываем, если оно включено у работы или уже записано у смены; иначе — как раньше, поле «Часов»
+      if(ewp && (wpUsesTime(ewp) || (s.from && s.to))) html += editorTimeHtml(s, ewp, withSales);
+      else html += '  <div class="hours-row"><label'+(withSales?' style="min-width:64px;"':'')+'>Часов</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="hoursInput" placeholder="'+numText(wpShiftHours(ewp))+'" value="'+numText(s.hours)+'" oninput="WC.setHours(this.value)"></div>';
       if(withSales) html += '  <div class="hours-row"><label style="min-width:64px;">Продажи</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="salesInput" placeholder="0" style="width:130px;" value="'+numText(s.sales)+'" oninput="WC.setSales(this.value)"></div>';
       html += '  <div class="preview-pay" id="editorPay">'+editorPayHtml(s)+'</div>';
     }
@@ -2176,7 +2397,18 @@
     html += '<div class="choice'+(patternForm.fillMode==='week'?' active':'')+'" style="color:'+pc+(patternForm.fillMode==='week'?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternFillMode(\'week\')">До конца недели (по вс.)</div>';
     html += '  </div></div>';
 
-    html += '  <div class="field"><label>Часов за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="patternHours" value="'+numText(patternForm.hours)+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    const pwp = getWorkplace(patternForm.workplaceId);
+    if(pwp && pwp.presets && pwp.presets.length){
+      const pi = Math.min(patternForm.presetIdx || 0, pwp.presets.length - 1);
+      html += '  <div class="field"><label>Смена</label><div class="choice-row">';
+      pwp.presets.forEach(function(pr, i){
+        const on = i === pi;
+        html += '<div class="choice'+(on?' active':'')+'" style="flex:1 1 0;min-width:0;padding:8px 4px;color:'+pc+(on?';background:'+pc+'22;box-shadow:0 0 10px '+pc:'')+'" onclick="WC.setPatternField(\'presetIdx\','+i+')">'+esc(pr.name || 'Смена')+'<div class="mono" style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">'+pr.from+'–'+pr.to+'</div></div>';
+      });
+      html += '  </div></div>';
+    } else {
+      html += '  <div class="field"><label>Часов за смену</label><input type="text" autocomplete="off" enterkeyhint="done" inputmode="decimal" id="patternHours" value="'+numText(patternForm.hours)+'" oninput="WC.setPatternField(\'hours\', this.value)"></div>';
+    }
 
     html += '  <div class="editor-actions" style="justify-content:flex-start;margin-top:12px;">';
     html += '    <div class="choice active" style="flex:none;color:'+pc+';background:'+pc+'22;box-shadow:0 0 10px '+pc+';cursor:pointer;" onclick="WC.applyPattern()">Применить шаблон</div>';
@@ -4595,7 +4827,9 @@
         if(v !== undefined){
           if(cur && cur.workplaceId && cur.workplaceId !== p.importWp){ skipped++; continue; } // день уже занят другой работой
           const prevSales = (cur && cur.workplaceId === p.importWp && cur.sales != null) ? cur.sales : null;
-          state.shifts[k] = { workplaceId:p.importWp, hours:(typeof v === 'number' && v > 1) ? v : p.importHours, dayOff:false };
+          const iwp = getWorkplace(p.importWp);
+          if(!(typeof v === 'number' && v > 1) && iwp && iwp.presets && iwp.presets.length) state.shifts[k] = shiftFromPreset(iwp, iwp.presets[0]);
+          else state.shifts[k] = { workplaceId:p.importWp, hours:(typeof v === 'number' && v > 1) ? v : p.importHours, dayOff:false };
           if(prevSales != null) state.shifts[k].sales = prevSales;
           added++;
         } else if(p.importOff === 'off' && !cur){
@@ -4741,7 +4975,7 @@
         }
       } else {
         patternForm[key] = value;
-        if(key === 'workplaceId'){ const cw = getWorkplace(value); if(cw){ patternForm.hours = wpShiftHours(cw); patternHoursTouched = false; } }
+        if(key === 'workplaceId'){ const cw = getWorkplace(value); if(cw){ patternForm.hours = wpShiftHours(cw); patternHoursTouched = false; } patternForm.presetIdx = 0; }
         render();
       }
     },
@@ -4764,12 +4998,14 @@
         endD = new Date(sy, sm-1, daysInMonth(sy, sm-1));
       }
       const hoursVal = patternForm.hours || 0;
+      const ptWp = getWorkplace(patternForm.workplaceId);
+      const ptPreset = (ptWp && ptWp.presets && ptWp.presets.length) ? ptWp.presets[Math.min(patternForm.presetIdx || 0, ptWp.presets.length - 1)] : null;
       let i = 0;
       let cur = new Date(startD);
       while(cur <= endD){
         const k = dateKey(cur.getFullYear(), cur.getMonth(), cur.getDate());
         if(i % cycle < wd){
-          state.shifts[k] = { workplaceId: patternForm.workplaceId, hours: hoursVal, dayOff:false };
+          state.shifts[k] = ptPreset ? shiftFromPreset(ptWp, ptPreset) : { workplaceId: patternForm.workplaceId, hours: hoursVal, dayOff:false };
         } else {
           state.shifts[k] = { dayOff:true };
         }
@@ -4788,6 +5024,7 @@
       render();
     },
     dayTap(k){
+      editorPresetsOpen = false;
       if(rangeMode){
         if(!rangeStart || rangeEnd){ rangeStart = k; rangeEnd = null; }
         else { rangeEnd = k; }
@@ -4814,10 +5051,17 @@
       if(!selectedDate) return;
       const existing = state.shifts[selectedDate] || {};
       const pw = getWorkplace(wpId);
-      const ns = { workplaceId: wpId, hours: existing.workplaceId===wpId ? existing.hours : (pw ? wpShiftHours(pw) : undefined), dayOff:false };
-      if(existing.workplaceId===wpId && existing.sales != null) ns.sales = existing.sales;
+      let ns;
+      if(existing.workplaceId === wpId){
+        ns = Object.assign({}, existing, { dayOff:false });          // та же работа — время, перерыв и продажи остаются
+      } else if(pw && pw.presets && pw.presets.length){
+        ns = shiftFromPreset(pw, pw.presets[0]);
+      } else {
+        ns = { workplaceId: wpId, hours: pw ? wpShiftHours(pw) : undefined, dayOff:false };
+      }
       state.shifts[selectedDate] = ns;
       editorPickerOpen = false;
+      editorPresetsOpen = false;
       saveState(); render();
     },
     pickDayOff(){
@@ -4879,6 +5123,52 @@
       deferredRender = true;   // годовая статистика пересчитается, когда клавиатуру закроют
       scheduleSave();
     },
+    setShiftTime(which, v){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate];
+      if(!s) return;
+      if(tMin(v) == null) delete s[which]; else s[which] = v;
+      const wp = getWorkplace(s.workplaceId);
+      if(s.from && s.to && wp && wp.breakMode === 'unpaid' && typeof s.breakMin !== 'number') s.breakMin = wpBreakMin(wp);
+      const ph = paidHoursByTime(s.from, s.to, wp, s);
+      if(ph != null) s.hours = ph;
+      const sub = document.getElementById('timeSub'); if(sub) sub.innerHTML = timeSubHtml(s, wp);
+      const pay = document.getElementById('editorPay'); if(pay) pay.innerHTML = editorPayHtml(s);
+      const pc = document.getElementById('presetCur'); if(pc) pc.innerHTML = presetLabelHtml(presetOfShift(s, wp));
+      deferredRender = true;      // перерыв и кнопки смен обновятся, когда закроют колёсико времени
+      scheduleSave();
+    },
+    pickPreset(i){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate], wp = s && getWorkplace(s.workplaceId);
+      if(!wp || !wp.presets[i]) return;
+      s.from = wp.presets[i].from; s.to = wp.presets[i].to;
+      if(wp.breakMode === 'unpaid' && typeof s.breakMin !== 'number') s.breakMin = wpBreakMin(wp);
+      s.hours = paidHoursByTime(s.from, s.to, wp, s);
+      editorPresetsOpen = false;
+      saveState(); render();
+    },
+    setShiftBreak(v){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate];
+      if(!s) return;
+      const n = parseNum(v);
+      if(String(v).trim() === '') s.breakMin = 0; else if(isFinite(n) && n <= 1440) s.breakMin = n; else return;
+      const wp = getWorkplace(s.workplaceId);
+      const ph = paidHoursByTime(s.from, s.to, wp, s);
+      if(ph != null) s.hours = ph;
+      const sub = document.getElementById('timeSub'); if(sub) sub.innerHTML = timeSubHtml(s, wp);
+      const pay = document.getElementById('editorPay'); if(pay) pay.innerHTML = editorPayHtml(s);
+      scheduleSave();
+    },
+    setBreakAt(v){
+      if(!selectedDate) return;
+      const s = state.shifts[selectedDate];
+      if(!s) return;
+      s.breakAt = v === 'night' ? 'night' : 'day';
+      saveState(); render();
+    },
+    togglePresets(){ editorPresetsOpen = !editorPresetsOpen; render(); },
     setHours(v){
       if(!selectedDate) return;
       const s = state.shifts[selectedDate];
@@ -4901,6 +5191,24 @@
       const isNew = idx === 'new';
       const w = isNew ? newWpForm : state.workplaces[idx];
       if(!w) return;
+      if(key === 'nightFrom' || key === 'nightTo'){
+        if(tMin(value) == null) return;
+        w[key] = value;
+        const nh = document.getElementById('wpNightHint'+idx); if(nh) nh.textContent = nightHintText(w);
+        deferredRender = true;
+        if(!isNew) scheduleSave();
+        return;
+      }
+      if(key === 'nightValue' || key === 'breakMin'){
+        const n = parseNum(value);
+        if(String(value).trim() === '') w[key] = 0;
+        else if(isFinite(n) && (key !== 'breakMin' || n <= 600)) w[key] = n;
+        else return;
+        if(key === 'breakMin'){ syncShiftHours(w); refreshWpDerived(w, idx); }
+        const nh = document.getElementById('wpNightHint'+idx); if(nh) nh.textContent = nightHintText(w);
+        if(!isNew) scheduleSave();
+        return;
+      }
       if(key === 'salesPercent'){
         const n = parseNum(value);
         if(String(value).trim() === '') w.salesPercent = 0;
@@ -4929,12 +5237,49 @@
       else w[key] = value;
       if(!isNew) scheduleSave();
     },
+    // Смены работы (кнопки в окне дня)
+    editPreset(idx, i, key, value){
+      const isNew = idx === 'new';
+      const w = isNew ? newWpForm : state.workplaces[idx];
+      const pr = w && w.presets && w.presets[i];
+      if(!pr) return;
+      if(key === 'name') pr.name = String(value).slice(0, 20);
+      else {
+        if(tMin(value) == null) return;      // время стёрли — оставляем прежнее
+        pr[key] = value;
+        if(i === 0){ syncShiftHours(w); refreshWpDerived(w, idx); }
+      }
+      deferredRender = true;                 // перерисуем, когда закроют клавиатуру или колёсико времени
+      if(!isNew) scheduleSave();
+    },
+    addPreset(idx){
+      const isNew = idx === 'new';
+      const w = isNew ? newWpForm : state.workplaces[idx];
+      if(!w) return;
+      if(!Array.isArray(w.presets)) w.presets = [];
+      if(w.presets.length >= 4) return;
+      const n = w.presets.length;
+      w.presets.push(n === 0 ? { name:'День', from:'08:00', to:'20:00' } : n === 1 ? { name:'Ночь', from:'20:00', to:'08:00' } : { name:'Смена '+(n+1), from:'09:00', to:'18:00' });
+      if(n === 0) syncShiftHours(w);
+      if(!isNew) saveState();
+      render();
+    },
+    removePreset(idx, i){
+      const isNew = idx === 'new';
+      const w = isNew ? newWpForm : state.workplaces[idx];
+      if(!w || !w.presets || !w.presets[i]) return;
+      w.presets.splice(i, 1);
+      if(i === 0) syncShiftHours(w);
+      if(!isNew) saveState();
+      render();
+    },
     updateWp(idx, key, value){
       const isNew = idx === 'new';
       const w = isNew ? newWpForm : state.workplaces[idx];
       if(!w) return;
       if(key==='rate') w.rate = parseFloat(value)||0;
       else w[key] = value;
+      if(key === 'breakMode') syncShiftHours(w);
       if(!isNew) saveState();
       render();
     },
@@ -4984,7 +5329,8 @@
       const used = activeWorkplaces().map(function(w){ return w.color; });
       const color = SWATCH_COLORS.find(function(c){ return used.indexOf(c) < 0; }) || SWATCH_COLORS[0];
       const any = state.workplaces[0];
-      newWpForm = { name:'', color: color, payType:'daily', rate:0, currency: any && any.currency ? any.currency : '₽', shiftHours: 8, salesMode:'none', salesPercent:0, salesFix:false };
+      newWpForm = { name:'', color: color, payType:'daily', rate:0, currency: any && any.currency ? any.currency : '₽', shiftHours: 8, salesMode:'none', salesPercent:0, salesFix:false,
+                    presets: [], nightMode:'none', nightValue:0, nightFrom:'22:00', nightTo:'06:00', breakMode:'paid', breakMin:0 };
       render();
     },
     cancelNewWp(){ newWpForm = null; render(); },
@@ -4994,7 +5340,10 @@
       if(activeWorkplaces().length >= 10){ showAlert('Максимум 10 текущих мест работы.'); return; }
       const name = String(f.name || '').trim() || ('Работа '+(activeWorkplaces().length+1));
       const w = { id:'w'+Date.now(), name:name, color:f.color, payType:f.payType==='hourly'?'hourly':'daily', rate:f.rate||0, currency:String(f.currency||'').trim()||'₽',
-                  archived:false, shiftHours:f.shiftHours>0?f.shiftHours:8, salesMode:f.salesMode||'none', salesPercent:f.salesPercent||0, salesFix:!!f.salesFix };
+                  archived:false, shiftHours:f.shiftHours>0?f.shiftHours:8, salesMode:f.salesMode||'none', salesPercent:f.salesPercent||0, salesFix:!!f.salesFix,
+                  presets:(f.presets||[]).map(function(x){ return { name:x.name, from:x.from, to:x.to }; }),
+                  nightMode:f.nightMode||'none', nightValue:f.nightValue||0, nightFrom:f.nightFrom||'22:00', nightTo:f.nightTo||'06:00',
+                  breakMode:f.breakMode==='unpaid'?'unpaid':'paid', breakMin:f.breakMin||0 };
       state.workplaces.push(w);
       const pw = getWorkplace(patternForm.workplaceId);
       if(!pw || pw.archived){ patternForm.workplaceId = w.id; patternForm.hours = wpShiftHours(w); }
