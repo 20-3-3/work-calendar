@@ -898,7 +898,7 @@
   // whenever the saved shape changes — never rename/remove existing fields, only add.
   // This is how future updates avoid wiping out a user's existing shifts/workplaces.
   const CURRENT_VERSION = 7;
-  const APP_BUILD = 'iOS · 2026-11-16 · v22';
+  const APP_BUILD = 'iOS · 2026-11-22 · v22.1';
 
   let state = {
     version: CURRENT_VERSION,
@@ -2556,15 +2556,15 @@
   // 7) результат показывается на проверку, и только после подтверждения записывается в календарь.
 
   const TESS_SRC = [
-    'https://fastly.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
-    'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+    'https://fastly.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+    'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'
   ];
   const TESS_OPTS = [
-    { workerPath:'https://fastly.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-      corePath:'https://fastly.jsdelivr.net/npm/tesseract.js-core@5',
+    { workerPath:'https://fastly.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+      corePath:'https://fastly.jsdelivr.net/npm/tesseract.js-core@5.1.1',
       langPath:'https://fastly.jsdelivr.net/npm/@tesseract.js-data/rus/4.0.0_best_int' },
-    { workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-      corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5',
+    { workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+      corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
       langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/rus/4.0.0_best_int' }
   ];
   let tessLoading = null;
@@ -5473,6 +5473,11 @@
   document.addEventListener('touchcancel', function(){ sw = null; }, { passive:true });
 
   loadState();
+
+  // Офлайн-помощник: приложение открывается без интернета (данные по-прежнему в localStorage)
+  if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+  }
 
   // После обновления: убираем служебную метку из адреса и коротко показываем результат
   if(canUpdate()){
