@@ -7,7 +7,7 @@
 Однофайловое веб-приложение (PWA) для учёта смен и зарплаты. Работает с экрана «Домой» на iPhone.
 - iOS (главная версия): этот репозиторий `20-3-3/work-calendar`, GitHub Pages. Файлы: `index.html`, `icon.png`, `sw.js` (офлайн-кэш с v22.1).
 - Android: отдельный репозиторий `20-3-3/tabel-android` (своя копия + `manifest.webmanifest`, `sw.js`, иконки). У него свой `CLAUDE.md`.
-- Текущая версия: **v22.2** (`APP_BUILD = 'iOS · 2026-11-22 · v22.2'`).
+- Текущая версия: **v23** (`APP_BUILD = 'iOS · 2026-11-27 · v23'`).
 - Обе версии на одном сайте `20-3-3.github.io` (общий localStorage). Кэши iOS называются `wc-ios-*`, Android — `tabel-*`; каждая версия удаляет только свои. При выпуске менять имя `CACHE` в `sw.js`.
 
 ## Правила владельца (действуют всегда)
@@ -33,12 +33,12 @@
 ## Устройство кода (`index.html`, ~5500 строк)
 - CSS: строки ~34–860. Скрипт: ~866–5499. **Строка ~3446 — модель распознавания цифр `DIGIT_MLP` (45 КБ), не читать целиком.**
 - Ввод в полях: обработчики не перерисовывают экран, а правят узлы по id + `scheduleSave()`. Полная перерисовка после закрытия клавиатуры — через `deferredRender = true`. Перерисовка на `change`/blur теряет символы (пробовали — откатили).
-- Данные, версия 7 (`CURRENT_VERSION = 7`):
+- Данные, версия 8 (`CURRENT_VERSION = 8`):
   - `state = {version, workplaces[], shifts{'ГГГГ-ММ-ДД': смена}, payments[], bonuses{'ГГГГ-ММ': {wpId: {percent, sales, fix}}}, profile{}}`
-  - работа: `id, name, color, payType ('daily'|'hourly'), rate, currency, archived, shiftHours, salesMode ('none'|'shift'|'month'), salesPercent, salesFix, tips, nightMode ('none'|'percent'|'fixed'), nightValue, nightFrom, nightTo, presets[{name, from, to}], breakMode ('paid'|'unpaid'), breakMin`
-  - смена: `workplaceId, hours, dayOff, sales, tips, from, to, breakMin, breakAt ('day'|'night')`
+  - работа: `id, name, color, payType ('daily'|'hourly'), rate, currency, archived, shiftHours, salesMode ('none'|'shift'|'month'), salesCount (1–3), salesPercent, salesPercent2, salesPercent3, salesFix, tips, nightMode ('none'|'percent'|'fixed'), nightValue, nightFrom, nightTo, presets[{name, from, to}], breakMode ('paid'|'unpaid'), breakMin`
+  - смена: `workplaceId, hours, dayOff, sales, sales2, sales3, tips, from, to, breakMin, breakAt ('day'|'night')`
   - `normalizeState` перечисляет поля работы явно — новое поле надо добавить туда и в `migrateState`.
-- Премия за месяц: (продажи − фикс) × процент. Чаевые считаются отдельно от зарплаты.
+- Процент со смены: до трёх процентов (`salesCount`), Σ salesN × процентN; проценты сверх `salesCount` хранятся, но не считаются. Премия за месяц (один процент): (продажи − фикс) × процент. Чаевые считаются отдельно от зарплаты.
 - Ключевые функции: `calcPay`, `nightHoursOf`, `paidHoursByTime`, `computeRangeStats`, `migrateState`, `normalizeState`, `fmtNum` (своя, вместо медленного `toLocaleString`), `exportWorkbook` (Excel, библиотека грузится с CDN), `checkForUpdates`/`applyUpdate`. Действия интерфейса — объект `WC.*`.
 
 ## История версий
@@ -47,6 +47,7 @@
 - v19 / v19.1 — процент с продаж, «Премиальная часть» в отчётах, лист «Новое место работы», пустой первый запуск, «Удалить навсегда».
 - v21 — время смены «с … до …», сворачиваемые кнопки смен (День/Ночь), ночные часы (% или фикс), неоплачиваемый перерыв в минутах с выбором «днём / ночью».
 - v22 — чаевые (включаются в настройках работы, отдельный блок в отчётах, колонка в Excel).
+- v23 — до трёх процентов со смены: в настройках работы «Сколько процентов 1/2/3» и свой размер каждого; в окне дня поле продаж на каждый процент; отчёты и Excel по каждому.
 - v22.2 — иконка iOS = вариант №5 «неоновый календарь», как на Android.
 - v22.1 — офлайн: `sw.js` (свои файлы «сначала сеть», CDN «сначала кэш», только удачные ответы), tesseract закреплён на 5.1.1.
 
@@ -64,6 +65,7 @@
 
 ## Журнал
 Формат: дата — что сделано — итог. Новые строки сверху.
+- 2026-11-27 — iOS v23: до трёх процентов со смены (рендеры → «внедряем»). Проверки: обновление v22.2→v23 (отчёты за 3 месяца совпали, данные целы), 2→1 процент не теряет данные, скорость на уровне v22.2.
 - 2026-11-22 — iOS v22.2: неоновая иконка №5, как на Android.
 - 2026-11-22 — iOS v22.1: офлайн-кэш `sw.js`, tesseract 5.1.1. Проверки: обновление v22→v22.1 с данными, офлайн iOS и Android, кэши не мешают друг другу, скорость на уровне v22.
 - 2026-11-22 — Android v22.1: кэши только `tabel-*`, ошибки CDN не кэшируются, tesseract 5.1.1.
